@@ -19,7 +19,7 @@ How far into the Track playback has reached, expressed in seconds.
 _Avoid_: Progress, elapsed, timestamp
 
 **Anchor**:
-A trusted observation pairing a Playback Position with the moment it was observed. Between Anchors, the current Playback Position is estimated by elapsed time; each new Anchor corrects the accumulated error.
+A trusted observation of playback — its state and Playback Position — paired with the moment it was observed. Between Anchors, the current Playback Position is estimated by elapsed time; each new Anchor corrects the accumulated error.
 _Avoid_: Sample, tick, sync point
 
 **Drift**:

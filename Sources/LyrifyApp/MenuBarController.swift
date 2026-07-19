@@ -3,15 +3,17 @@ import LyrifyCore
 
 /// Lyrify's only visible surface for now: a status item naming the current Track.
 ///
-/// Ticket 1 polls once a second. Ticket 2 replaces the timer with Spotify's
-/// playback notification, at which point the poll becomes the slow re-anchor
-/// that bounds Drift rather than the primary signal.
+/// Every poll result becomes an Anchor for the `PlaybackClock`, and the title
+/// renders from the clock's answer. Issue #3 adds Spotify's playback
+/// notification as a second Anchor source, at which point the poll becomes the
+/// slow re-anchor that bounds Drift rather than the primary signal (issue #4).
 @MainActor
 final class MenuBarController {
     private let statusItem: NSStatusItem
     private let bridge: SpotifyBridge
     private var timer: Timer?
-    private var lastState: PlaybackState = .notRunning
+    private var clock = PlaybackClock()
+    private var lastTitle = ""
 
     private static let refreshInterval: TimeInterval = 1.0
 
@@ -54,17 +56,28 @@ final class MenuBarController {
     }
 
     private func refresh() {
-        let state: PlaybackState
+        let observed: PlaybackState
         do {
-            state = try bridge.currentState()
+            observed = try bridge.currentState()
         } catch {
-            // Ticket 10 turns a refused permission into an explanatory state.
-            // Until then, stay quiet rather than showing a broken title.
-            state = .notRunning
+            // A later ticket turns a refused permission into an explanatory
+            // state. Until then, stay quiet rather than showing a broken title.
+            observed = .notRunning
         }
 
-        guard state != lastState else { return }
-        lastState = state
-        statusItem.button?.title = MenuBarTitle.text(for: state).map { " " + $0 } ?? ""
+        let now = ContinuousClock.Instant.now
+        clock.anchor(observed, at: now)
+        render(at: now)
+    }
+
+    /// Estimated position changes on every query, so deduplicate on the title
+    /// — the part of the state this surface actually shows.
+    private func render(at instant: ContinuousClock.Instant) {
+        let state = clock.estimatedState(at: instant)
+        let title = MenuBarTitle.text(for: state).map { " " + $0 } ?? ""
+
+        guard title != lastTitle else { return }
+        lastTitle = title
+        statusItem.button?.title = title
     }
 }

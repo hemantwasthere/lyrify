@@ -1,4 +1,5 @@
 import AppKit
+import LyrifyCore
 
 /// Lyrify runs as a menu bar agent: no Dock icon, no windows, no main menu.
 /// `.accessory` gives us that even when launched straight from the build
@@ -8,7 +9,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        menuBar = MenuBarController(bridge: SpotifyBridge())
+        menuBar = MenuBarController(
+            bridge: SpotifyBridge(),
+            lyricsProvider: LyricsProvider(transport: URLSessionLyricsTransport())
+        )
     }
 }
 

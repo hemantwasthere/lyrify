@@ -36,4 +36,11 @@ public struct Track: Equatable, Sendable {
     public var durationInWholeSeconds: Int {
         Int(duration.rounded())
     }
+
+    /// Whether lyrics could ever exist for this item. Anything that is not a
+    /// Spotify track — an advertisement, a podcast episode, a local file — is
+    /// a Non-Lyrical Item, and querying a lyrics database for one is nonsense.
+    public var isLyrical: Bool {
+        uri.hasPrefix("spotify:track:")
+    }
 }

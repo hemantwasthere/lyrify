@@ -2,10 +2,10 @@ import Foundation
 
 /// What a lyrics lookup concluded about a Track.
 ///
-/// The three cases mean different things to whoever remembers them (the
-/// miss-inclusive cache, ticket #9): `found` and `noSyncedLyrics` are
-/// confirmed answers; `unavailable` proves nothing about the Track and
-/// should be retried on a later replay instead.
+/// The three cases mean different things to whoever remembers them:
+/// `found` and `noSyncedLyrics` are confirmed answers the provider's memory
+/// holds; `unavailable` proves nothing about the Track and is retried on a
+/// later replay instead.
 public enum LyricsOutcome: Equatable, Sendable {
     /// Synced Lyrics confidently Matched to this Track.
     case found([LyricLine])
@@ -22,12 +22,21 @@ public enum LyricsOutcome: Equatable, Sendable {
 /// (ADR-0001), through an injected transport so the pipeline is testable
 /// without the network.
 ///
-/// This is the exact-signature step only: artist, title, album and
-/// whole-second duration must all line up. The widening, fail-closed Match
-/// (ADR-0003) arrives in ticket #8; remembering outcomes so replays never
-/// ask twice (ADR-0001) arrives in ticket #9.
-public struct LyricsProvider: Sendable {
+/// An actor because it remembers: confirmed outcomes — found lyrics and
+/// misses alike — are held in memory, keyed by Track URI, for the life of
+/// the process, so a listener's loops and repeats never burden a free
+/// community service twice (ADR-0001). Unavailability is deliberately not
+/// remembered: a lookup that failed offline retries on a later replay.
+public actor LyricsProvider {
     private let transport: any LyricsTransport
+
+    /// Confirmed outcomes by Track URI. Never holds `.unavailable`.
+    private var remembered: [String: LyricsOutcome] = [:]
+
+    /// Lookups still underway, by Track URI. Actors are reentrant across
+    /// `await`, so without this a second lookup arriving mid-flight would
+    /// run the whole widening sequence again for the same Track.
+    private var inFlight: [String: Task<LyricsOutcome, Never>] = [:]
 
     private static let baseURL = URL(string: "https://lrclib.net")!
 
@@ -43,11 +52,27 @@ public struct LyricsProvider: Sendable {
         self.transport = transport
     }
 
-    /// What LRCLIB concluded about the Track, per ADR-0003's three widening
-    /// steps: the exact signature, the same with the album dropped, then the
-    /// search. If nothing survives, the answer is a confirmed miss — never a
-    /// best guess.
+    /// What is known about the Track's lyrics — answered from memory when a
+    /// confirmed outcome exists, otherwise concluded fresh from LRCLIB.
     public func lookup(for track: Track) async -> LyricsOutcome {
+        if let known = remembered[track.uri] { return known }
+        if let pending = inFlight[track.uri] { return await pending.value }
+
+        let flight = Task { await fetchOutcome(for: track) }
+        inFlight[track.uri] = flight
+        let outcome = await flight.value
+        inFlight[track.uri] = nil
+
+        if outcome != .unavailable {
+            remembered[track.uri] = outcome
+        }
+        return outcome
+    }
+
+    /// ADR-0003's three widening steps: the exact signature, the same with
+    /// the album dropped, then the search. If nothing survives, the answer is
+    /// a confirmed miss — never a best guess.
+    private func fetchOutcome(for track: Track) async -> LyricsOutcome {
         for includeAlbum in [true, false] {
             switch await exactLookup(for: track, includingAlbum: includeAlbum) {
             case .synced(let lines): return .found(lines)

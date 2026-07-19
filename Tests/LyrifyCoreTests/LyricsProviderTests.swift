@@ -216,6 +216,99 @@ struct LyricsProviderTests {
         #expect(await provider.lookup(for: track()) == .noSyncedLyrics)
     }
 
+    /// Holds every request open until released, so a test can overlap two
+    /// lookups deterministically.
+    actor GatedTransport: LyricsTransport {
+        private(set) var requested: [URL] = []
+        private var gates: [CheckedContinuation<Void, Never>] = []
+        private let response: (status: Int, body: Data)
+
+        init(response: (status: Int, body: Data)) {
+            self.response = response
+        }
+
+        func get(_ url: URL) async throws -> (status: Int, body: Data) {
+            requested.append(url)
+            await withCheckedContinuation { gates.append($0) }
+            return response
+        }
+
+        func release() {
+            gates.forEach { $0.resume() }
+            gates.removeAll()
+        }
+    }
+
+    /// Skipping A→B→A faster than a lookup completes must not ask LRCLIB
+    /// twice for the same Track: concurrent lookups share one flight.
+    @Test("concurrent lookups for one Track share a single flight")
+    func concurrentLookupsShareFlight() async {
+        let transport = GatedTransport(
+            response: (200, record(syncedLyrics: #"[00:10.00] once"#))
+        )
+        let provider = LyricsProvider(transport: transport)
+
+        async let first = provider.lookup(for: track())
+        async let second = provider.lookup(for: track())
+
+        while await transport.requested.isEmpty { await Task.yield() }
+        // Give the second lookup every chance to reach the provider before
+        // the gate opens; without sharing, it would add a request here.
+        for _ in 0..<50 { await Task.yield() }
+        await transport.release()
+
+        let outcomes = await (first, second)
+        #expect(outcomes.0 == .found([LyricLine(text: "once", start: 10)]))
+        #expect(outcomes.1 == outcomes.0)
+        #expect(await transport.requested.count == 1)
+    }
+
+    /// ADR-0001: replaying a Track never asks a free community service twice.
+    @Test("a found Track answers from memory with no second request")
+    func foundRemembered() async {
+        let transport = FakeTransport(scripted: [
+            (200, record(syncedLyrics: #"[00:10.00] once"#))
+        ])
+        let provider = LyricsProvider(transport: transport)
+
+        let first = await provider.lookup(for: track())
+        let second = await provider.lookup(for: track())
+
+        #expect(first == .found([LyricLine(text: "once", start: 10)]))
+        #expect(second == first)
+        #expect(await transport.requested.count == 1)
+    }
+
+    /// The miss is the outcome most worth remembering: a Track with no
+    /// lyrics would otherwise be re-searched every time it came around.
+    @Test("a confirmed miss is remembered with no second round of requests")
+    func missRemembered() async {
+        let transport = FakeTransport(scripted: missesThenSearch([]))
+        let provider = LyricsProvider(transport: transport)
+
+        let first = await provider.lookup(for: track())
+        let second = await provider.lookup(for: track())
+
+        #expect(first == .noSyncedLyrics)
+        #expect(second == .noSyncedLyrics)
+        #expect(await transport.requested.count == 3)
+    }
+
+    /// Unavailability proves nothing about the Track, so it is never
+    /// remembered: back online, the lyrics can still be found.
+    @Test("a lookup after unavailability retries the transport")
+    func unavailabilityRetries() async {
+        let transport = FakeTransport(scripted: [])
+        let provider = LyricsProvider(transport: transport)
+
+        let first = await provider.lookup(for: track())
+        let second = await provider.lookup(for: track())
+
+        #expect(first == .unavailable)
+        #expect(second == .unavailable)
+        #expect(await transport.requested.count == 2)
+    }
+
     /// Offline is not "no lyrics exist": unavailability must stay
     /// distinguishable so a later replay can retry.
     @Test("a transport failure is unavailability, not a miss")

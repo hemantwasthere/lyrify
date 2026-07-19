@@ -147,7 +147,7 @@ final class MenuBarController {
     /// One lookup per Track: triggered when the clock's Track changes by URI,
     /// never re-triggered by position updates. A transient trackless blip
     /// (stopped, or one failed poll) forgets the URI and so re-triggers when
-    /// the same Track reappears; the miss-inclusive cache (ticket #9) makes
+    /// the same Track reappears; the provider's miss-inclusive memory makes
     /// that repeat free.
     private func reconcileLookup(with state: PlaybackState) {
         guard let track = state.track else {

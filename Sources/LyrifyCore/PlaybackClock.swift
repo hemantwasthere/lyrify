@@ -16,10 +16,12 @@ public struct PlaybackClock: Sendable {
 
     /// Records a trusted observation.
     ///
-    /// The latest-fed Anchor always wins, even one carrying an older instant:
-    /// sources are expected to feed observations in the order they were made.
-    /// Revisit if a second Anchor source can ever deliver stale observations
-    /// late.
+    /// The latest-fed Anchor always wins, even one carrying an older instant.
+    /// Both sources — the poll and the playback notification — observe on the
+    /// main actor and stamp their instant at delivery, so a stale observation
+    /// can only overtake a fresh one by a queue hop measured in milliseconds,
+    /// and the next re-anchor repairs it. Accepted trade; revisit only if a
+    /// source ever stamps observation time rather than delivery time.
     public mutating func anchor(_ state: PlaybackState, at instant: ContinuousClock.Instant) {
         latest = (state, instant)
     }

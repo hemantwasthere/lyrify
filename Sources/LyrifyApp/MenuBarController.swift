@@ -3,15 +3,16 @@ import LyrifyCore
 
 /// Lyrify's only visible surface for now: a status item naming the current Track.
 ///
-/// Every poll result becomes an Anchor for the `PlaybackClock`, and the title
-/// renders from the clock's answer. Issue #3 adds Spotify's playback
-/// notification as a second Anchor source, at which point the poll becomes the
-/// slow re-anchor that bounds Drift rather than the primary signal (issue #4).
+/// Spotify's playback notification and the poll each feed the `PlaybackClock`
+/// as Anchor sources, and the title renders from the clock's answer. Issue #4
+/// demotes the poll to the slow re-anchor that bounds Drift, now that the
+/// notification carries the events.
 @MainActor
 final class MenuBarController {
     private let statusItem: NSStatusItem
     private let bridge: SpotifyBridge
     private var timer: Timer?
+    private var notificationObserver: SpotifyNotificationObserver?
     private var clock = PlaybackClock()
     private var lastTitle = ""
 
@@ -25,6 +26,9 @@ final class MenuBarController {
         buildMenu()
         refresh()
         startTimer()
+        notificationObserver = SpotifyNotificationObserver { [weak self] observed in
+            self?.anchor(observed)
+        }
     }
 
     private func configureButton() {
@@ -65,6 +69,10 @@ final class MenuBarController {
             observed = .notRunning
         }
 
+        anchor(observed)
+    }
+
+    private func anchor(_ observed: PlaybackState) {
         let now = ContinuousClock.Instant.now
         clock.anchor(observed, at: now)
         render(at: now)

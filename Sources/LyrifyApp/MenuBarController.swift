@@ -26,13 +26,16 @@ final class MenuBarController {
     /// abandoned Track must never overwrite the current one.
     private var lookupURI: String?
 
-    /// What the indicator can say about the current Track's lyrics.
+    /// What the indicator can say about the current Track's lyrics. A miss
+    /// and unavailability read differently on purpose: one is a database gap,
+    /// the other a network hiccup that will retry.
     private enum LookupOutcome {
         case nothingPlaying
         case nonLyrical
         case looking
         case found(lineCount: Int)
         case missed
+        case unavailable
 
         var menuTitle: String {
             switch self {
@@ -41,6 +44,7 @@ final class MenuBarController {
             case .looking: "Looking up synced lyrics…"
             case .found(let lineCount): "Synced lyrics found (\(lineCount) lines)"
             case .missed: "No synced lyrics found"
+            case .unavailable: "Lyrics lookup unavailable"
             }
         }
 
@@ -164,10 +168,14 @@ final class MenuBarController {
         show(.looking)
         Task { [weak self] in
             guard let self else { return }
-            let lyrics = await self.lyricsProvider.lyrics(for: track)
+            let outcome = await self.lyricsProvider.lookup(for: track)
 
             guard self.lookupURI == track.uri else { return }
-            self.show(lyrics.map { .found(lineCount: $0.count) } ?? .missed)
+            switch outcome {
+            case .found(let lines): self.show(.found(lineCount: lines.count))
+            case .noSyncedLyrics: self.show(.missed)
+            case .unavailable: self.show(.unavailable)
+            }
         }
     }
 

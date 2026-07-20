@@ -7,32 +7,23 @@ import LyrifyCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController?
-    private var overlay: OverlayController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let anchorSource = PlaybackAnchorSource(bridge: SpotifyBridge())
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
-        let displayPreference = DisplayPreference()
         let overlayVisibility = OverlayVisibilityPreference()
 
-        let overlay = OverlayController(
-            anchorSource: anchorSource,
-            lyricsProvider: lyricsProvider,
-            displayPreference: displayPreference,
-            overlayVisibility: overlayVisibility
-        )
-        self.overlay = overlay
-
+        // The retired pill/notch Overlay is gone (ADR-0006); its replacement,
+        // the draggable widget, lands in a later ticket. The "Show Overlay"
+        // toggle has nothing to refresh yet.
         menuBar = MenuBarController(
             anchorSource: anchorSource,
             lyricsProvider: lyricsProvider,
-            displayPreference: displayPreference,
             overlayVisibility: overlayVisibility,
-            onOverlaySettingsChange: { overlay.refresh() }
+            onVisibilityChange: {}
         )
 
-        // Both subscribers are registered before anchoring starts, so neither
-        // misses the seed poll.
+        // Registered before anchoring starts, so it doesn't miss the seed poll.
         anchorSource.start()
     }
 }

@@ -14,12 +14,8 @@ final class MenuBarController {
     private var lastTitle = ""
     private var outcomeItem: NSMenuItem?
 
-    /// Owns the Display submenu. Held here because `NSMenu.delegate` is
-    /// weak — the menu itself won't keep it alive.
-    private var displayMenuController: DisplayMenuController?
-
-    /// Owns the "Show Overlay" toggle. Held for the same reason as
-    /// `displayMenuController` — the menu item's `target` doesn't retain it.
+    /// Owns the "Show Overlay" toggle. Held here because the menu item's
+    /// `target` doesn't retain it.
     private var overlayVisibilityMenuController: OverlayVisibilityMenuController?
 
     /// The Track URI the lookup outcome on display belongs to. A completed
@@ -57,19 +53,14 @@ final class MenuBarController {
     init(
         anchorSource: PlaybackAnchorSource,
         lyricsProvider: LyricsProvider,
-        displayPreference: DisplayPreference,
         overlayVisibility: OverlayVisibilityPreference,
-        onOverlaySettingsChange: @escaping () -> Void
+        onVisibilityChange: @escaping () -> Void
     ) {
         self.lyricsProvider = lyricsProvider
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         configureButton()
-        buildMenu(
-            displayPreference: displayPreference,
-            overlayVisibility: overlayVisibility,
-            onOverlaySettingsChange: onOverlaySettingsChange
-        )
+        buildMenu(overlayVisibility: overlayVisibility, onVisibilityChange: onVisibilityChange)
         anchorSource.onAnchor { [weak self] state in
             self?.render(state)
             self?.reconcileLookup(with: state)
@@ -85,11 +76,7 @@ final class MenuBarController {
         button.imagePosition = .imageLeading
     }
 
-    private func buildMenu(
-        displayPreference: DisplayPreference,
-        overlayVisibility: OverlayVisibilityPreference,
-        onOverlaySettingsChange: @escaping () -> Void
-    ) {
+    private func buildMenu(overlayVisibility: OverlayVisibilityPreference, onVisibilityChange: @escaping () -> Void) {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -102,17 +89,10 @@ final class MenuBarController {
 
         let overlayVisibilityMenuController = OverlayVisibilityMenuController(
             preference: overlayVisibility,
-            onChange: onOverlaySettingsChange
+            onChange: onVisibilityChange
         )
         self.overlayVisibilityMenuController = overlayVisibilityMenuController
         menu.addItem(overlayVisibilityMenuController.menuItem)
-
-        let displayMenuController = DisplayMenuController(
-            displayPreference: displayPreference,
-            onChange: onOverlaySettingsChange
-        )
-        self.displayMenuController = displayMenuController
-        menu.addItem(displayMenuController.menuItem)
 
         menu.addItem(.separator())
         menu.addItem(

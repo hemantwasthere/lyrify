@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             anchorSource: anchorSource,
             bridge: bridge,
             artworkProvider: artworkProvider,
+            lyricsProvider: lyricsProvider,
             visibilityPreference: overlayVisibility,
             positionPreference: overlayPosition,
             expansionPreference: overlayExpansion

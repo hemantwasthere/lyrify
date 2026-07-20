@@ -1,16 +1,17 @@
 import AppKit
 import LyrifyCore
 
-/// Owns the Overlay's window and both its forms — the Minimized Disc and
-/// the Expanded Now Playing card — keeping it where the listener left it,
-/// spinning the Disc's artwork in time with playback, and turning the Now
-/// Playing card's controls into real Spotify commands (ADR-0007).
-///
-/// The Lyrics view lands in a later ticket.
+/// Owns the Overlay's window and all three of its forms — the Minimized
+/// Disc, and the Expanded card's Now Playing and Lyrics views — keeping it
+/// where the listener left it, spinning the Disc's artwork in time with
+/// playback, turning the Now Playing card's controls into real Spotify
+/// commands (ADR-0007), and rendering the Lyrics view from the same
+/// `OverlayDisplay`/`LineSelection` seams the retired Overlay used.
 ///
 /// Deliberately untested — thin AppKit wiring verified by hand; the
-/// rotation angle and the artwork outcome it draws come from `DiscRotation`
-/// and `ArtworkProvider`, the tested core seams.
+/// rotation angle, artwork outcome, and lyrics content it draws come from
+/// `DiscRotation`, `ArtworkProvider`, and `OverlayDisplay`/`LineSelection`,
+/// the tested core seams.
 @MainActor
 final class OverlayController {
     private let window: OverlayWindow
@@ -19,11 +20,24 @@ final class OverlayController {
     private let anchorSource: PlaybackAnchorSource
     private let bridge: SpotifyBridge
     private let artworkProvider: ArtworkProvider
+    private let lyricsProvider: LyricsProvider
     private let positionPreference: OverlayPositionPreference
     private let visibilityPreference: OverlayVisibilityPreference
     private let expansionPreference: OverlayExpansionPreference
 
     private var rotation = DiscRotation()
+
+    /// The current Track's Synced Lyrics once found; nil while looking up,
+    /// on a confirmed miss, or when unavailable — every one of those is "no
+    /// Synced Lyrics" to `OverlayDisplay`, which answers the Idle State for
+    /// them.
+    private var currentLyrics: [LyricLine]?
+
+    /// Whether the Expanded card is currently showing the Lyrics view
+    /// rather than Now Playing. Resets to Now Playing every time the card
+    /// expands — unlike position and expanded/collapsed state, this isn't
+    /// persisted.
+    private var isShowingLyrics = false
 
     /// The last-known Anchor's play state — the play/pause button consults
     /// this to decide which of `play()`/`pause()` to send, rather than
@@ -58,6 +72,7 @@ final class OverlayController {
         anchorSource: PlaybackAnchorSource,
         bridge: SpotifyBridge,
         artworkProvider: ArtworkProvider,
+        lyricsProvider: LyricsProvider,
         visibilityPreference: OverlayVisibilityPreference,
         positionPreference: OverlayPositionPreference,
         expansionPreference: OverlayExpansionPreference
@@ -65,6 +80,7 @@ final class OverlayController {
         self.anchorSource = anchorSource
         self.bridge = bridge
         self.artworkProvider = artworkProvider
+        self.lyricsProvider = lyricsProvider
         self.visibilityPreference = visibilityPreference
         self.positionPreference = positionPreference
         self.expansionPreference = expansionPreference
@@ -89,6 +105,7 @@ final class OverlayController {
         nowPlayingView.onSkipToPrevious = { [weak self] in try? self?.bridge.skipToPrevious() }
         nowPlayingView.onSeek = { [weak self] position in try? self?.bridge.seek(to: position) }
         nowPlayingView.onVolumeChange = { [weak self] percent in try? self?.bridge.setVolume(to: percent) }
+        nowPlayingView.onToggleLyrics = { [weak self] in self?.toggleLyrics() }
 
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
@@ -132,6 +149,8 @@ final class OverlayController {
     private func expand() {
         guard expansionPreference.isExpanded == false else { return }
         expansionPreference.isExpanded = true
+        isShowingLyrics = false
+        nowPlayingView.showArtwork()
         window.setContent(nowPlayingView)
 
         Task { [weak self] in
@@ -144,6 +163,15 @@ final class OverlayController {
         guard expansionPreference.isExpanded else { return }
         expansionPreference.isExpanded = false
         window.setContent(discView)
+    }
+
+    private func toggleLyrics() {
+        isShowingLyrics.toggle()
+        if isShowingLyrics {
+            nowPlayingView.showLyrics()
+        } else {
+            nowPlayingView.showArtwork()
+        }
     }
 
     /// One lookup per Track, exactly like the menu bar's lyrics lookup. The
@@ -174,6 +202,24 @@ final class OverlayController {
         }
     }
 
+    /// One lookup per Track, sharing `LyricsProvider` with the menu bar —
+    /// whichever of the two asks first triggers the network call, the other
+    /// rides the same memoized answer, exactly like ticket #12's Overlay did.
+    /// A Non-Lyrical Item triggers no lookup at all, matching the menu bar's
+    /// own rule.
+    private func reconcileLyrics(for track: Track) {
+        guard track.isLyrical else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let outcome = await self.lyricsProvider.lookup(for: track)
+
+            guard self.currentTrackURI == track.uri else { return }
+            guard case .found(let lines) = outcome else { return }
+            self.currentLyrics = lines
+        }
+    }
+
     private func render(_ state: PlaybackState) {
         reconcileTrackChange(with: state)
 
@@ -186,6 +232,7 @@ final class OverlayController {
         if let position = state.position {
             nowPlayingView.updateSeek(position: position)
         }
+        refreshLyricsDisplay(state)
 
         // Anchors arrive far more often than play/pause actually changes —
         // every notification, every re-anchor poll — so only touch the timer
@@ -217,6 +264,7 @@ final class OverlayController {
         guard let track = state.track else {
             if currentTrackURI != nil {
                 currentTrackURI = nil
+                currentLyrics = nil
                 discView.updatePlaceholder()
                 nowPlayingView.updatePlaceholder()
             }
@@ -224,21 +272,39 @@ final class OverlayController {
         }
         guard track.uri != currentTrackURI else { return }
         currentTrackURI = track.uri
+        currentLyrics = nil
 
         discView.updatePlaceholder()
         nowPlayingView.updatePlaceholder()
         nowPlayingView.configureSeek(duration: track.duration)
 
         reconcileArtwork(for: track)
+        reconcileLyrics(for: track)
     }
 
     private func redrawPlayback() {
         let now = ContinuousClock.Instant.now
         discView.update(rotationDegrees: rotation.angle(at: now))
 
-        if let position = anchorSource.currentEstimate().position {
+        let estimate = anchorSource.currentEstimate()
+        if let position = estimate.position {
             nowPlayingView.updateSeek(position: position)
         }
+        refreshLyricsDisplay(estimate)
+    }
+
+    /// What the Lyrics view shows, from `OverlayDisplay` — the Overlay is
+    /// always considered "visible" here, since the whole widget's own
+    /// visibility is a separate concern (`refreshVisibility()`); this seam
+    /// only ever decides between the Idle State, hidden lines, and Active/
+    /// Next Line content. `nextChange` goes unused: rather than arm a
+    /// separate precise per-transition timer the way the retired Overlay
+    /// did, this rides the same continuous redraw already driving the spin
+    /// and seek slider, which is frequent enough that no line change is
+    /// ever visibly late.
+    private func refreshLyricsDisplay(_ state: PlaybackState) {
+        let answer = OverlayDisplay.resolve(isVisible: true, state: state, lyrics: currentLyrics)
+        nowPlayingView.updateLyrics(answer.content)
     }
 
     private static func defaultOrigin(for size: NSSize) -> NSPoint {

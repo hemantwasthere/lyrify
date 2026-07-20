@@ -1,10 +1,13 @@
 import AppKit
+import LyrifyCore
 
-/// The Overlay's Expanded form, Now Playing view: album art at rest, with
-/// previous / play-pause / next / seek / volume controls revealed on hover
-/// and faded back out the moment the mouse leaves. Clicking the art (via
-/// `onClick`, inherited) collapses back to the Disc; dragging anywhere
-/// moves the Overlay, exactly like the Disc.
+/// The Overlay's Expanded form: album art or the Lyrics view at rest —
+/// toggled by the lyrics button — with previous / play-pause / next /
+/// lyrics / seek / volume controls revealed on hover and faded back out the
+/// moment the mouse leaves, regardless of which background is showing.
+/// Clicking any non-interactive area (via `onClick`, inherited) collapses
+/// back to the Disc; dragging anywhere moves the Overlay, exactly like the
+/// Disc.
 ///
 /// Seek and volume only commit on mouse-up, not on every intermediate
 /// value — dragging either shouldn't fire a live AppleScript command for
@@ -21,12 +24,15 @@ final class NowPlayingView: DraggableBackgroundView {
     var onSkipToPrevious: (() -> Void)?
     var onSeek: ((TimeInterval) -> Void)?
     var onVolumeChange: ((Int) -> Void)?
+    var onToggleLyrics: (() -> Void)?
 
     private let artView = PassthroughImageView()
+    private let lyricsView = LyricsCardView()
     private let controlsOverlay = NSView()
     private let seekSlider = NSSlider()
     private let volumeSlider = NSSlider()
     private let playPauseButton = NSButton()
+    private let lyricsButton = NSButton()
 
     private var isDraggingSeek = false
     private var isDraggingVolume = false
@@ -53,6 +59,17 @@ final class NowPlayingView: DraggableBackgroundView {
             artView.trailingAnchor.constraint(equalTo: trailingAnchor),
             artView.topAnchor.constraint(equalTo: topAnchor),
             artView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+
+        lyricsView.isHidden = true
+        lyricsView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(lyricsView)
+
+        NSLayoutConstraint.activate([
+            lyricsView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            lyricsView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            lyricsView.topAnchor.constraint(equalTo: topAnchor),
+            lyricsView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
         configureControlsOverlay()
@@ -106,6 +123,29 @@ final class NowPlayingView: DraggableBackgroundView {
         playPauseButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Play/Pause")
     }
 
+    /// Swaps the background to the Lyrics view. The controls overlay above
+    /// it is unaffected — hovering still reveals the same transport, seek,
+    /// and volume controls, so playback stays reachable while reading along.
+    func showLyrics() {
+        lyricsView.isHidden = false
+        artView.isHidden = true
+        lyricsButton.contentTintColor = .white
+    }
+
+    /// Back to album art.
+    func showArtwork() {
+        lyricsView.isHidden = true
+        artView.isHidden = false
+        lyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
+    }
+
+    /// What the Lyrics view shows — forwarded straight to `LyricsCardView`,
+    /// updated regardless of whether it's currently the visible background,
+    /// so it's already current the moment the listener switches to it.
+    func updateLyrics(_ content: OverlayDisplay.Content) {
+        lyricsView.update(with: content)
+    }
+
     /// Sets the seek slider's range to the current Track's duration. Called
     /// once per Track, not on every Anchor.
     func configureSeek(duration: TimeInterval) {
@@ -152,7 +192,13 @@ final class NowPlayingView: DraggableBackgroundView {
         playPauseButton.action = #selector(playPauseTapped)
         let nextButton = transportButton(symbolName: "forward.fill", action: #selector(nextTapped))
 
-        let transportRow = NSStackView(views: [previousButton, playPauseButton, nextButton])
+        lyricsButton.image = NSImage(systemSymbolName: "quote.bubble", accessibilityDescription: "Lyrics")
+        styleTransportButton(lyricsButton)
+        lyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
+        lyricsButton.target = self
+        lyricsButton.action = #selector(lyricsTapped)
+
+        let transportRow = NSStackView(views: [previousButton, playPauseButton, nextButton, lyricsButton])
         transportRow.orientation = .horizontal
         transportRow.spacing = 20
 
@@ -212,6 +258,10 @@ final class NowPlayingView: DraggableBackgroundView {
 
     @objc private func nextTapped() {
         onSkipToNext?()
+    }
+
+    @objc private func lyricsTapped() {
+        onToggleLyrics?()
     }
 
     @objc private func seekSliderChanged(_ sender: NSSlider) {

@@ -1,6 +1,6 @@
 # Lyrify
 
-An always-on macOS overlay that displays the time-synchronised lyrics of the track currently playing in Spotify, two lines at a time, positioned in the notch or near the top of the screen.
+An always-on macOS companion widget for the track currently playing in Spotify: a draggable, resizable Overlay that shows time-synchronised lyrics, playback controls, and album art, and follows the listener across every desktop Space and fullscreen app.
 
 ## Language
 
@@ -71,13 +71,21 @@ _Avoid_: Delay, latency adjustment, calibration
 ### Display
 
 **Overlay**:
-The single always-visible, click-through window in which the Active Line and Next Line are shown. It never takes keyboard focus and follows the listener across desktops and fullscreen apps.
-_Avoid_: Widget, HUD, window, panel
+The single always-visible companion widget for the current Track: draggable anywhere by clicking and dragging its body directly, resizable, and never taking keyboard focus even though it accepts clicks — so it never steals focus from whatever the listener is doing elsewhere. Follows the listener across every desktop Space and fullscreen app.
+_Avoid_: HUD (implies non-interactive; this one is dragged and clicked directly)
 
-**Placement**:
-Where on a chosen display the Overlay sits. When that display has a notch the Overlay straddles it; otherwise the Overlay is a pill near the top edge. The notch is a Placement, not a premise.
-_Avoid_: Position, anchor (reserved above), docking
+**Minimized**:
+The Overlay's resting state: a small spinning Disc of album art and nothing else. Click the Disc to reach Expanded.
+_Avoid_: Collapsed, docked
+
+**Disc**:
+The Minimized Overlay's shape — a small circle of the current Track's album art, spinning while the Track plays and freezing at its current angle when paused, resuming from that angle on play.
+_Avoid_: Bubble, sphere
+
+**Expanded**:
+The Overlay's larger, resizable state, reached by clicking the Disc: a card alternating between its Now Playing view (playback controls, revealed on hover so the resting card stays uncluttered) and its Lyrics view (the Active Line and Next Line, or more surrounding lines as the card is resized larger), toggled by the lyrics button. Clicking the album art again returns to Minimized.
+_Avoid_: Popover, panel (as the user-facing term — fine as an implementation detail)
 
 **Idle State**:
-The reduced form the Overlay takes when it has no Synced Lyrics to show but playback is still happening — naming the Track without pretending to follow it.
+What the Lyrics view shows when the current Track has no Synced Lyrics to display — an honest "nothing found" message rather than stale or empty lines. The Track is still named via the album art and title shown throughout the Overlay regardless of lyrics availability.
 _Avoid_: Empty state, fallback view

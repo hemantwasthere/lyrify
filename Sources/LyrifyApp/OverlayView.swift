@@ -10,6 +10,11 @@ import LyrifyCore
 final class OverlayView: NSView {
     static let size = NSSize(width: 480, height: 64)
 
+    /// How dimmed the Idle State's Track name is — the "reduced form"
+    /// CONTEXT.md describes. Shared with the notch's wings via this
+    /// constant so the two forms can't drift on how muted Idle State looks.
+    static let idleAlpha: CGFloat = 0.6
+
     private let activeLabel = NSTextField(labelWithString: "")
     private let nextLabel = NSTextField(labelWithString: "")
 
@@ -58,5 +63,13 @@ final class OverlayView: NSView {
         activeLabel.alphaValue = text.activeAlpha
         nextLabel.stringValue = text.nextText
         nextLabel.alphaValue = text.nextAlpha
+    }
+
+    /// The Idle State: just the Track's name, dimmed, with nothing in the
+    /// Next Line's place — there are no lyrics to anticipate.
+    func updateIdle(trackName: String) {
+        activeLabel.stringValue = trackName
+        activeLabel.alphaValue = Self.idleAlpha
+        nextLabel.stringValue = ""
     }
 }

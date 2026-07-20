@@ -33,10 +33,10 @@ final class OverlayPresenter {
     }
 
     /// Shows `content` in whichever form the chosen display's Placement
-    /// calls for, hiding the other form's windows. No chosen display (every
-    /// screen vanished) hides everything.
-    func show(content: LineSelection.Content) {
-        guard let screen = chosenScreen() else {
+    /// calls for, hiding the other form's windows. `.hidden`, or no chosen
+    /// display at all (every screen vanished), hides everything.
+    func show(_ content: OverlayDisplay.Content) {
+        guard content != .hidden, let screen = chosenScreen() else {
             hide()
             return
         }
@@ -46,16 +46,14 @@ final class OverlayPresenter {
             leftWingWindow.orderOut(nil)
             rightWingWindow.orderOut(nil)
 
-            pillView.update(with: content)
+            paintPill(content)
             pillWindow.setFrame(pillFrame(on: screen), display: true)
             pillWindow.orderFrontRegardless()
 
         case .notch(let leftMargin, let rightMargin):
             pillWindow.orderOut(nil)
 
-            let text = OverlayText(content)
-            leftWingView.update(text: text.activeText, alpha: text.activeAlpha)
-            rightWingView.update(text: text.nextText, alpha: text.nextAlpha)
+            paintWings(content)
             leftWingWindow.setFrame(leftMargin, display: true)
             rightWingWindow.setFrame(rightMargin, display: true)
             leftWingWindow.orderFrontRegardless()
@@ -67,6 +65,31 @@ final class OverlayPresenter {
         pillWindow.orderOut(nil)
         leftWingWindow.orderOut(nil)
         rightWingWindow.orderOut(nil)
+    }
+
+    /// `.hidden` never reaches here — `show(_:)` returns before either paint
+    /// method is called.
+    private func paintPill(_ content: OverlayDisplay.Content) {
+        switch content {
+        case .hidden: return
+        case .idle(let trackName):
+            pillView.updateIdle(trackName: trackName)
+        case .lines(let lineContent):
+            pillView.update(with: lineContent)
+        }
+    }
+
+    private func paintWings(_ content: OverlayDisplay.Content) {
+        switch content {
+        case .hidden: return
+        case .idle(let trackName):
+            leftWingView.update(text: trackName, alpha: OverlayView.idleAlpha)
+            rightWingView.update(text: "", alpha: 1.0) // empty text; alpha is moot
+        case .lines(let lineContent):
+            let text = OverlayText(lineContent)
+            leftWingView.update(text: text.activeText, alpha: text.activeAlpha)
+            rightWingView.update(text: text.nextText, alpha: text.nextAlpha)
+        }
     }
 
     private func chosenScreen() -> NSScreen? {

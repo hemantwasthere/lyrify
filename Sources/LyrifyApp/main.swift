@@ -13,11 +13,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let anchorSource = PlaybackAnchorSource(bridge: SpotifyBridge())
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
         let displayPreference = DisplayPreference()
+        let overlayVisibility = OverlayVisibilityPreference()
 
         let overlay = OverlayController(
             anchorSource: anchorSource,
             lyricsProvider: lyricsProvider,
-            displayPreference: displayPreference
+            displayPreference: displayPreference,
+            overlayVisibility: overlayVisibility
         )
         self.overlay = overlay
 
@@ -25,7 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             anchorSource: anchorSource,
             lyricsProvider: lyricsProvider,
             displayPreference: displayPreference,
-            onDisplayChange: { overlay.refreshPlacement() }
+            overlayVisibility: overlayVisibility,
+            onOverlaySettingsChange: { overlay.refresh() }
         )
 
         // Both subscribers are registered before anchoring starts, so neither

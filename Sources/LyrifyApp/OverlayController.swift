@@ -1,18 +1,15 @@
 import AppKit
 import LyrifyCore
 
-/// Shows the Overlay for the current Track's Synced Lyrics, driven by the
-/// same Anchor stream the menu bar uses. The clock (via
-/// `PlaybackAnchorSource`) supplies the Playback Position, the lyrics
-/// provider's found outcome supplies the Synced Lyrics, and `LineSelection`
-/// — the one tested seam — decides what to show and when that changes. This
-/// controller renders that answer through `OverlayPresenter`, which resolves
-/// the chosen display and its Placement, and arms one timer for the
-/// answer's `nextChange`, so lines change on time without polling.
-///
-/// For now the Overlay is simply hidden unless Synced Lyrics were found for
-/// the current Track; the Idle State that names a Track without lyrics is a
-/// separate ticket.
+/// Shows the Overlay for the current Track, driven by the same Anchor
+/// stream the menu bar uses. The clock (via `PlaybackAnchorSource`) supplies
+/// the Playback Position, the lyrics provider's found outcome supplies the
+/// Synced Lyrics, and `OverlayDisplay` — the one tested seam — decides
+/// whether that adds up to hidden, the Idle State, or Synced Lyrics via
+/// `LineSelection`, and when that answer next changes. This controller
+/// renders that answer through `OverlayPresenter`, which resolves the
+/// chosen display and its Placement, and arms one timer for the answer's
+/// `nextChange`, so lines change on time without polling.
 ///
 /// Deliberately untested — thin app-layer wiring verified by hand; every
 /// decision it acts on comes from tested core types.
@@ -20,6 +17,7 @@ import LyrifyCore
 final class OverlayController {
     private let anchorSource: PlaybackAnchorSource
     private let lyricsProvider: LyricsProvider
+    private let overlayVisibility: OverlayVisibilityPreference
     private let presenter: OverlayPresenter
 
     // nonisolated(unsafe) so deinit may remove it; safe because it's written
@@ -34,8 +32,9 @@ final class OverlayController {
     private var lookupURI: String?
 
     /// The current Track's Synced Lyrics once found; nil while looking up, on
-    /// a confirmed miss, or when unavailable — every one of those hides the
-    /// Overlay.
+    /// a confirmed miss, or when unavailable — every one of those is "no
+    /// Synced Lyrics" to `OverlayDisplay`, which answers the Idle State for
+    /// them.
     private var currentLyrics: [LyricLine]?
 
     /// Armed for the next Lyric Line's start; re-armed on every Anchor and on
@@ -43,9 +42,15 @@ final class OverlayController {
     /// really stay frozen.
     private var changeTimer: Timer?
 
-    init(anchorSource: PlaybackAnchorSource, lyricsProvider: LyricsProvider, displayPreference: DisplayPreference) {
+    init(
+        anchorSource: PlaybackAnchorSource,
+        lyricsProvider: LyricsProvider,
+        displayPreference: DisplayPreference,
+        overlayVisibility: OverlayVisibilityPreference
+    ) {
         self.anchorSource = anchorSource
         self.lyricsProvider = lyricsProvider
+        self.overlayVisibility = overlayVisibility
         self.presenter = OverlayPresenter(displayPreference: displayPreference)
 
         anchorSource.onAnchor { [weak self] state in
@@ -62,7 +67,7 @@ final class OverlayController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshPlacement() }
+            MainActor.assumeIsolated { self?.refresh() }
         }
     }
 
@@ -72,11 +77,12 @@ final class OverlayController {
         }
     }
 
-    /// Re-resolves the chosen display and its Placement against the current
-    /// Playback Position, without waiting for a new Anchor. Also what the
-    /// status item's Display submenu calls after the listener picks a
-    /// display, so the choice takes effect immediately.
-    func refreshPlacement() {
+    /// Re-resolves everything — chosen display, Placement, and visibility —
+    /// against the current Playback Position, without waiting for a new
+    /// Anchor. What the status item's Display submenu and "Show Overlay"
+    /// toggle both call after the listener changes a setting, so the change
+    /// takes effect immediately.
+    func refresh() {
         render(anchorSource.currentEstimate())
     }
 
@@ -113,15 +119,14 @@ final class OverlayController {
         changeTimer?.invalidate()
         changeTimer = nil
 
-        guard let lyrics = currentLyrics, let position = state.position else {
-            presenter.hide()
-            return
-        }
+        let answer = OverlayDisplay.resolve(
+            isVisible: overlayVisibility.isVisible,
+            state: state,
+            lyrics: currentLyrics
+        )
+        presenter.show(answer.content)
 
-        let answer = LineSelection.at(position, in: lyrics)
-        presenter.show(content: answer.content)
-
-        guard state.isPlaying, let nextChange = answer.nextChange else { return }
+        guard state.isPlaying, let nextChange = answer.nextChange, let position = state.position else { return }
 
         // `.common` mode, not the default: see `PlaybackAnchorSource.start()`
         // — a line change must still land while the status item's menu is

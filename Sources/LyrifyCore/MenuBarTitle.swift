@@ -14,7 +14,14 @@ public enum MenuBarTitle {
     public static func text(for state: PlaybackState) -> String? {
         guard let track = state.track else { return nil }
 
-        return truncated(track.name + separator + track.artist)
+        return text(for: track)
+    }
+
+    /// The same name — artist wording, for a caller that already has a
+    /// `Track` in hand rather than a full `PlaybackState`. The Overlay's
+    /// Idle State reuses this so it never drifts from the menu bar's wording.
+    public static func text(for track: Track) -> String {
+        truncated(track.name + separator + track.artist)
     }
 
     private static func truncated(_ text: String) -> String {

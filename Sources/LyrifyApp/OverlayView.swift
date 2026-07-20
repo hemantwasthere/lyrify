@@ -10,9 +10,6 @@ import LyrifyCore
 final class OverlayView: NSView {
     static let size = NSSize(width: 480, height: 64)
 
-    /// A quiet placeholder for an Instrumental Gap — never stale words.
-    private static let instrumentalGapPlaceholder = "♪"
-
     private let activeLabel = NSTextField(labelWithString: "")
     private let nextLabel = NSTextField(labelWithString: "")
 
@@ -25,7 +22,6 @@ final class OverlayView: NSView {
 
         configure(activeLabel, fontSize: 16, weight: .semibold)
         configure(nextLabel, fontSize: 13, weight: .regular)
-        nextLabel.alphaValue = 0.55
 
         let stack = NSStackView(views: [activeLabel, nextLabel])
         stack.orientation = .vertical
@@ -57,16 +53,10 @@ final class OverlayView: NSView {
     }
 
     func update(with content: LineSelection.Content) {
-        switch content {
-        case .instrumentalGap:
-            activeLabel.stringValue = Self.instrumentalGapPlaceholder
-            activeLabel.alphaValue = 0.5
-            nextLabel.stringValue = ""
-
-        case .lines(let active, let next):
-            activeLabel.stringValue = active.text
-            activeLabel.alphaValue = 1.0
-            nextLabel.stringValue = next?.text ?? ""
-        }
+        let text = OverlayText(content)
+        activeLabel.stringValue = text.activeText
+        activeLabel.alphaValue = text.activeAlpha
+        nextLabel.stringValue = text.nextText
+        nextLabel.alphaValue = text.nextAlpha
     }
 }

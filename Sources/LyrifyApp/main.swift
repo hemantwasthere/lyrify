@@ -12,9 +12,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let anchorSource = PlaybackAnchorSource(bridge: SpotifyBridge())
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
+        let displayPreference = DisplayPreference()
 
-        menuBar = MenuBarController(anchorSource: anchorSource, lyricsProvider: lyricsProvider)
-        overlay = OverlayController(anchorSource: anchorSource, lyricsProvider: lyricsProvider)
+        let overlay = OverlayController(
+            anchorSource: anchorSource,
+            lyricsProvider: lyricsProvider,
+            displayPreference: displayPreference
+        )
+        self.overlay = overlay
+
+        menuBar = MenuBarController(
+            anchorSource: anchorSource,
+            lyricsProvider: lyricsProvider,
+            displayPreference: displayPreference,
+            onDisplayChange: { overlay.refreshPlacement() }
+        )
 
         // Both subscribers are registered before anchoring starts, so neither
         // misses the seed poll.

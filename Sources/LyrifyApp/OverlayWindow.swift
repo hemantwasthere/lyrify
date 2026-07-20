@@ -30,21 +30,4 @@ final class OverlayWindow: NSPanel {
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
-
-    /// Centers the pill horizontally on `screen`, just below its menu bar —
-    /// "near the top edge," not overlapping the system menu bar's own items.
-    ///
-    /// Deliberately the only Placement this ticket implements: always the
-    /// main display, never straddling a notch. Runtime display choice and
-    /// notch-straddling geometry (ADR-0004's full Placement story) are a
-    /// separate ticket.
-    func reposition(on screen: NSScreen) {
-        let topInset: CGFloat = 8
-        let size = frame.size
-        let origin = NSPoint(
-            x: screen.frame.midX - size.width / 2,
-            y: screen.visibleFrame.maxY - size.height - topInset
-        )
-        setFrameOrigin(origin)
-    }
 }

@@ -14,6 +14,10 @@ final class MenuBarController {
     private var lastTitle = ""
     private var outcomeItem: NSMenuItem?
 
+    /// Owns the Display submenu. Held here because `NSMenu.delegate` is
+    /// weak — the menu itself won't keep it alive.
+    private var displayMenuController: DisplayMenuController?
+
     /// The Track URI the lookup outcome on display belongs to. A completed
     /// lookup is applied only if this still matches — a slow answer for an
     /// abandoned Track must never overwrite the current one.
@@ -46,12 +50,17 @@ final class MenuBarController {
         }
     }
 
-    init(anchorSource: PlaybackAnchorSource, lyricsProvider: LyricsProvider) {
+    init(
+        anchorSource: PlaybackAnchorSource,
+        lyricsProvider: LyricsProvider,
+        displayPreference: DisplayPreference,
+        onDisplayChange: @escaping () -> Void
+    ) {
         self.lyricsProvider = lyricsProvider
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         configureButton()
-        buildMenu()
+        buildMenu(displayPreference: displayPreference, onDisplayChange: onDisplayChange)
         anchorSource.onAnchor { [weak self] state in
             self?.render(state)
             self?.reconcileLookup(with: state)
@@ -67,7 +76,7 @@ final class MenuBarController {
         button.imagePosition = .imageLeading
     }
 
-    private func buildMenu() {
+    private func buildMenu(displayPreference: DisplayPreference, onDisplayChange: @escaping () -> Void) {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -75,6 +84,15 @@ final class MenuBarController {
         outcome.isEnabled = false
         menu.addItem(outcome)
         outcomeItem = outcome
+
+        menu.addItem(.separator())
+
+        let displayMenuController = DisplayMenuController(
+            displayPreference: displayPreference,
+            onChange: onDisplayChange
+        )
+        self.displayMenuController = displayMenuController
+        menu.addItem(displayMenuController.menuItem)
 
         menu.addItem(.separator())
         menu.addItem(

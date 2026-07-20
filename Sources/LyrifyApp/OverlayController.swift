@@ -1,13 +1,14 @@
 import AppKit
 import LyrifyCore
 
-/// Shows the Overlay pill for the current Track's Synced Lyrics, driven by
-/// the same Anchor stream the menu bar uses. The clock (via
+/// Shows the Overlay for the current Track's Synced Lyrics, driven by the
+/// same Anchor stream the menu bar uses. The clock (via
 /// `PlaybackAnchorSource`) supplies the Playback Position, the lyrics
 /// provider's found outcome supplies the Synced Lyrics, and `LineSelection`
 /// — the one tested seam — decides what to show and when that changes. This
-/// controller only renders that answer and arms one timer for its
-/// `nextChange`, so lines change on time without polling.
+/// controller renders that answer through `OverlayPresenter`, which resolves
+/// the chosen display and its Placement, and arms one timer for the
+/// answer's `nextChange`, so lines change on time without polling.
 ///
 /// For now the Overlay is simply hidden unless Synced Lyrics were found for
 /// the current Track; the Idle State that names a Track without lyrics is a
@@ -19,8 +20,12 @@ import LyrifyCore
 final class OverlayController {
     private let anchorSource: PlaybackAnchorSource
     private let lyricsProvider: LyricsProvider
-    private let window: OverlayWindow
-    private let view: OverlayView
+    private let presenter: OverlayPresenter
+
+    // nonisolated(unsafe) so deinit may remove it; safe because it's written
+    // once in init and never mutated again. Same rationale as
+    // `SpotifyNotificationObserver`.
+    private nonisolated(unsafe) var screenObserver: NSObjectProtocol?
 
     /// The Track URI the current lookup — pending, found, or missed —
     /// belongs to. Mirrors `MenuBarController`'s rule: a slow answer for an
@@ -38,18 +43,41 @@ final class OverlayController {
     /// really stay frozen.
     private var changeTimer: Timer?
 
-    init(anchorSource: PlaybackAnchorSource, lyricsProvider: LyricsProvider) {
+    init(anchorSource: PlaybackAnchorSource, lyricsProvider: LyricsProvider, displayPreference: DisplayPreference) {
         self.anchorSource = anchorSource
         self.lyricsProvider = lyricsProvider
-
-        let view = OverlayView()
-        self.view = view
-        self.window = OverlayWindow(contentView: view)
+        self.presenter = OverlayPresenter(displayPreference: displayPreference)
 
         anchorSource.onAnchor { [weak self] state in
             self?.reconcileLookup(with: state)
             self?.render(state)
         }
+
+        // Adding, removing, or rearranging screens changes which display is
+        // "main," a chosen display's notch geometry, or both — re-resolve
+        // live rather than waiting for the next Anchor, which may be up to
+        // one re-anchor interval away or, while paused, never come at all.
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshPlacement() }
+        }
+    }
+
+    deinit {
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+        }
+    }
+
+    /// Re-resolves the chosen display and its Placement against the current
+    /// Playback Position, without waiting for a new Anchor. Also what the
+    /// status item's Display submenu calls after the listener picks a
+    /// display, so the choice takes effect immediately.
+    func refreshPlacement() {
+        render(anchorSource.currentEstimate())
     }
 
     /// One lookup per Track, exactly like the menu bar's — including the
@@ -86,17 +114,12 @@ final class OverlayController {
         changeTimer = nil
 
         guard let lyrics = currentLyrics, let position = state.position else {
-            window.orderOut(nil)
+            presenter.hide()
             return
         }
 
         let answer = LineSelection.at(position, in: lyrics)
-        view.update(with: answer.content)
-
-        if let screen = NSScreen.main {
-            window.reposition(on: screen)
-        }
-        window.orderFrontRegardless()
+        presenter.show(content: answer.content)
 
         guard state.isPlaying, let nextChange = answer.nextChange else { return }
 

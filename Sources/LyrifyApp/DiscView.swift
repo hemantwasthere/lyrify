@@ -46,4 +46,11 @@ final class DiscView: NSView {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    /// Rotates the disc's artwork to `degrees` — `DiscRotation`'s current
+    /// estimate, or its frozen angle while paused. The ring around it is
+    /// circularly symmetric, so only the artwork needs to turn.
+    func update(rotationDegrees: Double) {
+        imageView.frameCenterRotation = CGFloat(rotationDegrees)
+    }
 }

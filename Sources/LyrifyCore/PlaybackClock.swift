@@ -38,10 +38,3 @@ public struct PlaybackClock: Sendable {
         return .playing(track, position: min(position + elapsed, track.duration))
     }
 }
-
-private extension Duration {
-    var seconds: TimeInterval {
-        let (whole, attoseconds) = components
-        return TimeInterval(whole) + TimeInterval(attoseconds) / 1e18
-    }
-}

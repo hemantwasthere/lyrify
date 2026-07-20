@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let overlayPosition = OverlayPositionPreference()
 
         let overlay = OverlayController(
+            anchorSource: anchorSource,
             visibilityPreference: overlayVisibility,
             positionPreference: overlayPosition
         )

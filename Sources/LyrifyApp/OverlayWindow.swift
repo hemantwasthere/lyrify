@@ -28,16 +28,27 @@ final class OverlayWindow: NSPanel {
         self.contentView = contentView
     }
 
-    /// Swaps in `view` and resizes to match, keeping the Overlay's center
-    /// point fixed — expanding or collapsing grows or shrinks in place
-    /// rather than jumping, wherever it was dragged to.
-    func setContent(_ view: NSView) {
+    /// Swaps in `view` and resizes to match — `size` when given (a
+    /// persisted card size on a fresh expand), otherwise `view`'s own frame
+    /// size (the Disc's fixed size, or a first-launch default). Keeps the
+    /// Overlay's center point fixed either way, so expanding or collapsing
+    /// grows or shrinks in place rather than jumping, wherever it was
+    /// dragged to.
+    func setContent(_ view: NSView, size: NSSize? = nil) {
         let center = NSPoint(x: frame.midX, y: frame.midY)
-        let newSize = view.frame.size
+        let newSize = size ?? view.frame.size
         let newOrigin = NSPoint(x: center.x - newSize.width / 2, y: center.y - newSize.height / 2)
 
         contentView = view
         setFrame(NSRect(origin: newOrigin, size: newSize), display: true)
+    }
+
+    /// Only the Expanded card is user-resizable — the Minimized Disc is a
+    /// fixed size. Toggled on expand/collapse rather than left on always.
+    func setResizable(_ resizable: Bool) {
+        styleMask = resizable
+            ? [.borderless, .nonactivatingPanel, .resizable]
+            : [.borderless, .nonactivatingPanel]
     }
 
     override var canBecomeKey: Bool { false }

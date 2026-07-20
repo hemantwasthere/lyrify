@@ -142,7 +142,7 @@ final class NowPlayingView: DraggableBackgroundView {
     /// What the Lyrics view shows — forwarded straight to `LyricsCardView`,
     /// updated regardless of whether it's currently the visible background,
     /// so it's already current the moment the listener switches to it.
-    func updateLyrics(_ content: OverlayDisplay.Content) {
+    func updateLyrics(_ content: LyricsCardView.Content) {
         lyricsView.update(with: content)
     }
 

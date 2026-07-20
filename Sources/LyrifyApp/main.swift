@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let overlayVisibility = OverlayVisibilityPreference()
         let overlayPosition = OverlayPositionPreference()
         let overlayExpansion = OverlayExpansionPreference()
+        let overlaySize = OverlaySizePreference()
 
         let overlay = OverlayController(
             anchorSource: anchorSource,
@@ -29,7 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lyricsProvider: lyricsProvider,
             visibilityPreference: overlayVisibility,
             positionPreference: overlayPosition,
-            expansionPreference: overlayExpansion
+            expansionPreference: overlayExpansion,
+            sizePreference: overlaySize
         )
         self.overlay = overlay
 

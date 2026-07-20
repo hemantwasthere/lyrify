@@ -24,6 +24,7 @@ final class OverlayController {
     private let positionPreference: OverlayPositionPreference
     private let visibilityPreference: OverlayVisibilityPreference
     private let expansionPreference: OverlayExpansionPreference
+    private let sizePreference: OverlaySizePreference
 
     private var rotation = DiscRotation()
 
@@ -63,10 +64,16 @@ final class OverlayController {
     private static let defaultTopInset: CGFloat = 8
     private static let defaultTrailingInset: CGFloat = 24
 
+    /// However large the listener drags the card, resizing stops here —
+    /// generous enough for `LyricsViewScale`'s own maximum line count to
+    /// comfortably fit.
+    private static let maximumCardSize = NSSize(width: 480, height: 640)
+
     // nonisolated(unsafe) so deinit may remove it; safe because it's written
     // once in init and never mutated again. Same rationale as
     // `SpotifyNotificationObserver`.
     private nonisolated(unsafe) var moveObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var resizeObserver: NSObjectProtocol?
 
     init(
         anchorSource: PlaybackAnchorSource,
@@ -75,7 +82,8 @@ final class OverlayController {
         lyricsProvider: LyricsProvider,
         visibilityPreference: OverlayVisibilityPreference,
         positionPreference: OverlayPositionPreference,
-        expansionPreference: OverlayExpansionPreference
+        expansionPreference: OverlayExpansionPreference,
+        sizePreference: OverlaySizePreference
     ) {
         self.anchorSource = anchorSource
         self.bridge = bridge
@@ -84,6 +92,7 @@ final class OverlayController {
         self.visibilityPreference = visibilityPreference
         self.positionPreference = positionPreference
         self.expansionPreference = expansionPreference
+        self.sizePreference = sizePreference
 
         let discView = DiscView()
         let nowPlayingView = NowPlayingView()
@@ -92,8 +101,14 @@ final class OverlayController {
 
         let startsExpanded = expansionPreference.isExpanded
         let initialView: NSView = startsExpanded ? nowPlayingView : discView
+        let initialSize = startsExpanded ? (sizePreference.size ?? NowPlayingView.size) : initialView.frame.size
+        let initialOrigin = positionPreference.origin ?? Self.defaultOrigin(for: initialSize)
+
         self.window = OverlayWindow(contentView: initialView)
-        window.setFrameOrigin(positionPreference.origin ?? Self.defaultOrigin(for: initialView.frame.size))
+        window.setFrame(NSRect(origin: initialOrigin, size: initialSize), display: true)
+        if startsExpanded {
+            enableCardResizing()
+        }
 
         discView.onClick = { [weak self] in self?.expand() }
         nowPlayingView.onClick = { [weak self] in self?.collapse() }
@@ -115,6 +130,14 @@ final class OverlayController {
             MainActor.assumeIsolated { self?.positionMoved() }
         }
 
+        resizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.sizeChanged() }
+        }
+
         refreshVisibility()
 
         anchorSource.onAnchor { [weak self] state in
@@ -125,6 +148,9 @@ final class OverlayController {
     deinit {
         if let moveObserver {
             NotificationCenter.default.removeObserver(moveObserver)
+        }
+        if let resizeObserver {
+            NotificationCenter.default.removeObserver(resizeObserver)
         }
     }
 
@@ -142,7 +168,18 @@ final class OverlayController {
         positionPreference.origin = window.frame.origin
     }
 
-    /// Grows the Disc into the Now Playing card in place, then reads
+    /// Persists the card's new size and, if the Lyrics view is showing,
+    /// rescales it immediately — resizing must feel live as the listener
+    /// drags an edge, not wait for the next Anchor or 30fps tick, which
+    /// could be up to a re-anchor interval away while paused.
+    private func sizeChanged() {
+        guard expansionPreference.isExpanded else { return }
+        sizePreference.size = window.frame.size
+        refreshLyricsDisplay(anchorSource.currentEstimate())
+    }
+
+    /// Grows the Disc into the Now Playing card in place — the persisted
+    /// card size if there is one, otherwise the default — then reads
     /// Spotify's actual current volume so the volume slider starts from
     /// the real value — touching it before that would otherwise jump
     /// Spotify's volume to wherever the thumb happened to be drawn.
@@ -151,7 +188,8 @@ final class OverlayController {
         expansionPreference.isExpanded = true
         isShowingLyrics = false
         nowPlayingView.showArtwork()
-        window.setContent(nowPlayingView)
+        window.setContent(nowPlayingView, size: sizePreference.size ?? NowPlayingView.size)
+        enableCardResizing()
 
         Task { [weak self] in
             guard let self, let volume = try? self.bridge.currentVolume() else { return }
@@ -162,7 +200,17 @@ final class OverlayController {
     private func collapse() {
         guard expansionPreference.isExpanded else { return }
         expansionPreference.isExpanded = false
+        window.setResizable(false)
         window.setContent(discView)
+    }
+
+    /// Sets the card's resize bounds before turning resizing on — in that
+    /// order, so there's no moment the listener could grab an edge before
+    /// bounds exist to enforce.
+    private func enableCardResizing() {
+        window.minSize = NowPlayingView.size
+        window.maxSize = Self.maximumCardSize
+        window.setResizable(true)
     }
 
     private func toggleLyrics() {
@@ -293,18 +341,40 @@ final class OverlayController {
         refreshLyricsDisplay(estimate)
     }
 
-    /// What the Lyrics view shows, from `OverlayDisplay` — the Overlay is
+    /// What the Lyrics view shows, composing three Core seams: `OverlayDisplay`
+    /// decides hidden/idle/lines the same way it always has (the Overlay is
     /// always considered "visible" here, since the whole widget's own
-    /// visibility is a separate concern (`refreshVisibility()`); this seam
-    /// only ever decides between the Idle State, hidden lines, and Active/
-    /// Next Line content. `nextChange` goes unused: rather than arm a
+    /// visibility is a separate concern — `refreshVisibility()`); only in
+    /// the "genuine lyrics" case does `LyricsWindow` and `LyricsViewScale`
+    /// come in, resolving how many surrounding lines the card's current
+    /// height calls for. `nextChange` goes unused: rather than arm a
     /// separate precise per-transition timer the way the retired Overlay
     /// did, this rides the same continuous redraw already driving the spin
     /// and seek slider, which is frequent enough that no line change is
     /// ever visibly late.
     private func refreshLyricsDisplay(_ state: PlaybackState) {
         let answer = OverlayDisplay.resolve(isVisible: true, state: state, lyrics: currentLyrics)
-        nowPlayingView.updateLyrics(answer.content)
+
+        switch answer.content {
+        case .hidden:
+            nowPlayingView.updateLyrics(.nothingPlaying)
+
+        case .idle(let trackName):
+            nowPlayingView.updateLyrics(.idle(trackName: trackName))
+
+        case .lines(.instrumentalGap):
+            nowPlayingView.updateLyrics(.gap)
+
+        case .lines(.lines):
+            // `OverlayDisplay` only reaches `.lines` when both are known —
+            // re-reading them here is cheap, and lets `LyricsWindow` widen
+            // beyond the single Active/Next pair `OverlayDisplay` itself
+            // answers.
+            guard let position = state.position, let lyrics = currentLyrics else { return }
+            let scale = LyricsViewScale.resolve(forHeight: window.frame.size.height)
+            let entries = LyricsWindow.resolve(at: position, in: lyrics, lineCount: scale.lineCount)
+            nowPlayingView.updateLyrics(.lines(entries, fontSize: scale.fontSize))
+        }
     }
 
     private static func defaultOrigin(for size: NSSize) -> NSPoint {

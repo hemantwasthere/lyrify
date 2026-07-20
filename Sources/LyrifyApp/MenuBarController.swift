@@ -1,8 +1,8 @@
 import AppKit
 import LyrifyCore
 
-/// Lyrify's only visible surface before the Overlay: a status item naming
-/// the current Track and indicating whether Synced Lyrics were found for it.
+/// The status item: names the current Track and indicates whether Synced
+/// Lyrics were found for it, alongside whatever the Overlay is showing.
 ///
 /// Subscribes to the shared `PlaybackAnchorSource` and renders on every
 /// Anchor. A Track change triggers one lyrics lookup, whose outcome fills the

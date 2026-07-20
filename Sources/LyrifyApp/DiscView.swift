@@ -2,26 +2,14 @@ import AppKit
 
 /// The Overlay's Minimized form: a small circle showing the current Track's
 /// album art, or a placeholder when none is known yet or none exists.
+/// Dragging it moves the Overlay; clicking it (via `onClick`) expands to
+/// the Now Playing card.
 ///
 /// Deliberately untested — a rendering leaf with no decisions of its own.
-final class DiscView: NSView {
+final class DiscView: DraggableBackgroundView {
     static let diameter: CGFloat = 56
 
-    /// An `NSImageView` that never intercepts a click — every mouse-down
-    /// must reach the window's background so `isMovableByWindowBackground`
-    /// can start a drag, even one that begins right on the icon or the art.
-    private final class PassthroughImageView: NSImageView {
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    }
-
     private let imageView = PassthroughImageView()
-
-    private static var placeholderImage: NSImage? {
-        NSImage(systemSymbolName: "music.note", accessibilityDescription: "Lyrify")?
-            .withSymbolConfiguration(.init(pointSize: 20, weight: .regular))
-    }
-
-    private static let placeholderTint = NSColor.white.withAlphaComponent(0.6)
 
     init() {
         super.init(frame: NSRect(origin: .zero, size: NSSize(width: Self.diameter, height: Self.diameter)))
@@ -38,8 +26,8 @@ final class DiscView: NSView {
         // `.scaleProportionallyDown` never enlarges: the small placeholder
         // icon stays small and centered, while real album art (always
         // larger than 56pt) scales down to fill.
-        imageView.image = Self.placeholderImage
-        imageView.contentTintColor = Self.placeholderTint
+        imageView.image = OverlayArtworkPlaceholder.image(pointSize: 20)
+        imageView.contentTintColor = OverlayArtworkPlaceholder.tint
         imageView.imageScaling = .scaleProportionallyDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(imageView)
@@ -73,7 +61,7 @@ final class DiscView: NSView {
     /// Back to the placeholder — no artwork known yet for the current
     /// Track, or a confirmed no-artwork outcome.
     func updatePlaceholder() {
-        imageView.contentTintColor = Self.placeholderTint
-        imageView.image = Self.placeholderImage
+        imageView.contentTintColor = OverlayArtworkPlaceholder.tint
+        imageView.image = OverlayArtworkPlaceholder.image(pointSize: 20)
     }
 }

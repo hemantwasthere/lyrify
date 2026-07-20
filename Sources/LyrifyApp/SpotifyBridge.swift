@@ -2,7 +2,8 @@ import AppKit
 import Foundation
 import LyrifyCore
 
-/// Reads playback state from the Spotify desktop client over Apple Events.
+/// Reads playback state from, and sends playback commands to, the Spotify
+/// desktop client over Apple Events.
 ///
 /// Two rules govern this type, both from ADR-0002:
 ///
@@ -10,6 +11,10 @@ import LyrifyCore
 ///    app *launches* it, and an overlay that starts Spotify at login would be a
 ///    genuinely bad bug.
 /// 2. All unit conversion happens in `SpotifyScriptOutput`, not here.
+///
+/// ADR-0007 adds a third: Lyrify now sends commands, not just reads state,
+/// through this same Automation channel — no new permission prompt, but a
+/// bug here can change what's playing, not just misreport it.
 @MainActor
 final class SpotifyBridge: PlaybackSource {
     enum BridgeError: Error, Equatable {
@@ -49,6 +54,21 @@ final class SpotifyBridge: PlaybackSource {
 
     private lazy var artworkScript = NSAppleScript(source: Self.artworkSource)
 
+    private static let volumeSource = #"tell application "Spotify" to return (sound volume as text)"#
+    private lazy var volumeScript = NSAppleScript(source: Self.volumeSource)
+
+    private static let playSource = #"tell application "Spotify" to play"#
+    private lazy var playScript = NSAppleScript(source: Self.playSource)
+
+    private static let pauseSource = #"tell application "Spotify" to pause"#
+    private lazy var pauseScript = NSAppleScript(source: Self.pauseSource)
+
+    private static let skipToNextSource = #"tell application "Spotify" to next track"#
+    private lazy var skipToNextScript = NSAppleScript(source: Self.skipToNextSource)
+
+    private static let skipToPreviousSource = #"tell application "Spotify" to previous track"#
+    private lazy var skipToPreviousScript = NSAppleScript(source: Self.skipToPreviousSource)
+
     /// Set once permission is refused, so we stop re-triggering a prompt the
     /// user has already dismissed. Ticket 10 turns this into a visible state.
     private(set) var isAutomationPermitted = true
@@ -61,18 +81,9 @@ final class SpotifyBridge: PlaybackSource {
 
     func currentState() throws -> PlaybackState {
         guard isSpotifyRunning else { return .notRunning }
-        guard isAutomationPermitted else { throw BridgeError.automationNotPermitted }
-
-        var errorInfo: NSDictionary?
-        let result = script?.executeAndReturnError(&errorInfo)
-
-        if let errorInfo {
-            throw mapError(errorInfo)
-        }
-        guard let output = result?.stringValue else {
+        guard let output = try run(script)?.stringValue else {
             throw BridgeError.scriptFailed("Spotify returned no value")
         }
-
         return try SpotifyScriptOutput.parse(output)
     }
 
@@ -82,18 +93,84 @@ final class SpotifyBridge: PlaybackSource {
     /// `currentState()`.
     func artworkURL() throws -> URL? {
         guard isSpotifyRunning else { return nil }
+        guard let output = try run(artworkScript)?.stringValue, output.isEmpty == false else {
+            return nil
+        }
+        return URL(string: output)
+    }
+
+    /// Spotify's current volume, 0–100. Read once when the Now Playing
+    /// card's controls appear, so the volume slider starts from the real
+    /// value instead of an arbitrary one — touching it before that would
+    /// otherwise jump Spotify's actual volume to wherever the slider
+    /// happened to be drawn. Throws rather than defaulting when Spotify
+    /// isn't running: unlike `.notRunning`, there is no legitimate "no
+    /// volume" value to hand back, and a caller silently painting the
+    /// slider to a made-up number would be worse than not updating it.
+    func currentVolume() throws -> Int {
+        guard isSpotifyRunning else { throw BridgeError.scriptFailed("Spotify is not running") }
+        guard let output = try run(volumeScript)?.stringValue, let volume = Int(output) else {
+            throw BridgeError.scriptFailed("Spotify returned no volume")
+        }
+        return volume
+    }
+
+    func play() throws {
+        guard isSpotifyRunning else { return }
+        _ = try run(playScript)
+    }
+
+    func pause() throws {
+        guard isSpotifyRunning else { return }
+        _ = try run(pauseScript)
+    }
+
+    func skipToNext() throws {
+        guard isSpotifyRunning else { return }
+        _ = try run(skipToNextScript)
+    }
+
+    func skipToPrevious() throws {
+        guard isSpotifyRunning else { return }
+        _ = try run(skipToPreviousScript)
+    }
+
+    /// Seeks to `position`, in seconds — the same unit `currentState()`
+    /// already reports Playback Position in.
+    ///
+    /// Unlike every other command here, this one can't be a precompiled
+    /// `lazy var`: the target position is only known at call time, and
+    /// `NSAppleScript` has no way to re-run a compiled script with a
+    /// substituted argument, so a fresh script is built and compiled per
+    /// call. Only ever fires on a slider release, not per drag tick.
+    func seek(to position: TimeInterval) throws {
+        guard isSpotifyRunning else { return }
+        let script = NSAppleScript(source: #"tell application "Spotify" to set player position to \#(position)"#)
+        _ = try run(script)
+    }
+
+    /// Sets Spotify's volume, 0–100. A fresh script per call, for the same
+    /// reason `seek(to:)` needs one.
+    func setVolume(to percent: Int) throws {
+        guard isSpotifyRunning else { return }
+        let script = NSAppleScript(source: #"tell application "Spotify" to set sound volume to \#(percent)"#)
+        _ = try run(script)
+    }
+
+    /// Runs a compiled script, translating a permission refusal or any
+    /// other AppleScript error into a thrown `BridgeError` — the one place
+    /// every read and write funnels through, so none of them re-derive the
+    /// same execute-and-check-`errorInfo` boilerplate.
+    private func run(_ script: NSAppleScript?) throws -> NSAppleEventDescriptor? {
         guard isAutomationPermitted else { throw BridgeError.automationNotPermitted }
 
         var errorInfo: NSDictionary?
-        let result = artworkScript?.executeAndReturnError(&errorInfo)
+        let result = script?.executeAndReturnError(&errorInfo)
 
         if let errorInfo {
             throw mapError(errorInfo)
         }
-        guard let output = result?.stringValue, output.isEmpty == false else {
-            return nil
-        }
-        return URL(string: output)
+        return result
     }
 
     private func mapError(_ info: NSDictionary) -> BridgeError {

@@ -20,13 +20,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let artworkProvider = ArtworkProvider(transport: URLSessionLyricsTransport())
         let overlayVisibility = OverlayVisibilityPreference()
         let overlayPosition = OverlayPositionPreference()
+        let overlayExpansion = OverlayExpansionPreference()
 
         let overlay = OverlayController(
             anchorSource: anchorSource,
             bridge: bridge,
             artworkProvider: artworkProvider,
             visibilityPreference: overlayVisibility,
-            positionPreference: overlayPosition
+            positionPreference: overlayPosition,
+            expansionPreference: overlayExpansion
         )
         self.overlay = overlay
 

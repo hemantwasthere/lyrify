@@ -4,19 +4,28 @@ import LyrifyCore
 /// Owns the Overlay's window and keeps it where the listener left it,
 /// spinning the Disc's artwork in time with playback.
 ///
-/// For now the Overlay is only its Minimized Disc — real album art,
-/// expanding into a Now Playing card, and lyrics all land in later tickets.
+/// For now the Overlay is only its Minimized Disc — expanding into a Now
+/// Playing card and lyrics land in later tickets.
 ///
 /// Deliberately untested — thin AppKit wiring verified by hand; the
-/// rotation angle it draws comes from `DiscRotation`, the tested core seam.
+/// rotation angle and the artwork outcome it draws come from `DiscRotation`
+/// and `ArtworkProvider`, the tested core seams.
 @MainActor
 final class OverlayController {
     private let window: DiscWindow
     private let view: DiscView
+    private let bridge: SpotifyBridge
+    private let artworkProvider: ArtworkProvider
     private let positionPreference: OverlayPositionPreference
     private let visibilityPreference: OverlayVisibilityPreference
 
     private var rotation = DiscRotation()
+
+    /// The Track URI the current artwork lookup — pending, found, or
+    /// missed — belongs to. Mirrors `MenuBarController`'s lyrics-lookup
+    /// rule: a slow answer for an abandoned Track must never overwrite the
+    /// artwork on screen for the current one.
+    private var artworkTrackURI: String?
 
     /// Redraws the spinning artwork between Anchors — the core decision
     /// comes from `DiscRotation`; this timer only asks it again and again.
@@ -37,9 +46,13 @@ final class OverlayController {
 
     init(
         anchorSource: PlaybackAnchorSource,
+        bridge: SpotifyBridge,
+        artworkProvider: ArtworkProvider,
         visibilityPreference: OverlayVisibilityPreference,
         positionPreference: OverlayPositionPreference
     ) {
+        self.bridge = bridge
+        self.artworkProvider = artworkProvider
         self.visibilityPreference = visibilityPreference
         self.positionPreference = positionPreference
 
@@ -84,7 +97,47 @@ final class OverlayController {
         positionPreference.origin = window.frame.origin
     }
 
+    /// One lookup per Track, exactly like the menu bar's lyrics lookup. The
+    /// artwork URL must be re-read from Spotify live for whatever is
+    /// current *right now* — unlike the rest of a Track's fields, it was
+    /// never captured at Anchor time — so the URI guard after the `await`
+    /// matters here for the same reason it matters there: Spotify may have
+    /// already moved on to a different Track by the time the read returns.
+    private func reconcileArtwork(with state: PlaybackState) {
+        guard let track = state.track else {
+            if artworkTrackURI != nil {
+                artworkTrackURI = nil
+                view.updatePlaceholder()
+            }
+            return
+        }
+        guard track.uri != artworkTrackURI else { return }
+        artworkTrackURI = track.uri
+        view.updatePlaceholder()
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            // A thrown read (permission refused, script failure, Spotify
+            // quitting mid-call) means we never actually asked Spotify —
+            // it must not be confused with Spotify *answering* "no artwork
+            // URL," which `ArtworkProvider` remembers permanently. Skipping
+            // the lookup here leaves nothing memoized, so a later replay of
+            // this Track retries, exactly like a lyrics lookup does after
+            // unavailability.
+            guard let artworkURL = try? self.bridge.artworkURL() else { return }
+
+            let outcome = await self.artworkProvider.lookup(for: track, artworkURL: artworkURL)
+
+            guard self.artworkTrackURI == track.uri else { return }
+            guard case .found(let data) = outcome, let image = NSImage(data: data) else { return }
+            self.view.updateArtwork(image)
+        }
+    }
+
     private func render(_ state: PlaybackState) {
+        reconcileArtwork(with: state)
+
         let now = ContinuousClock.Instant.now
         rotation.anchor(isPlaying: state.isPlaying, at: now)
         view.update(rotationDegrees: rotation.angle(at: now))

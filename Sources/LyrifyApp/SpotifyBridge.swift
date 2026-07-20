@@ -36,6 +36,19 @@ final class SpotifyBridge: PlaybackSource {
 
     private lazy var script = NSAppleScript(source: Self.source)
 
+    /// A dedicated read, separate from `source` above: the artwork URL has
+    /// no room in the notification path the way the rest of the fields do
+    /// (Spotify's own broadcast payload doesn't carry it), so it is always
+    /// fetched fresh, live, whenever a caller actually wants it.
+    private static let artworkSource = """
+        tell application "Spotify"
+            if player state is stopped then return ""
+            return (artwork url of current track)
+        end tell
+        """
+
+    private lazy var artworkScript = NSAppleScript(source: Self.artworkSource)
+
     /// Set once permission is refused, so we stop re-triggering a prompt the
     /// user has already dismissed. Ticket 10 turns this into a visible state.
     private(set) var isAutomationPermitted = true
@@ -61,6 +74,26 @@ final class SpotifyBridge: PlaybackSource {
         }
 
         return try SpotifyScriptOutput.parse(output)
+    }
+
+    /// The current Track's artwork URL, or nil when Spotify reports none —
+    /// no track playing, a Non-Lyrical Item, or a Track that simply has no
+    /// artwork. Guarded by the same "never launch Spotify" rule as
+    /// `currentState()`.
+    func artworkURL() throws -> URL? {
+        guard isSpotifyRunning else { return nil }
+        guard isAutomationPermitted else { throw BridgeError.automationNotPermitted }
+
+        var errorInfo: NSDictionary?
+        let result = artworkScript?.executeAndReturnError(&errorInfo)
+
+        if let errorInfo {
+            throw mapError(errorInfo)
+        }
+        guard let output = result?.stringValue, output.isEmpty == false else {
+            return nil
+        }
+        return URL(string: output)
     }
 
     private func mapError(_ info: NSDictionary) -> BridgeError {

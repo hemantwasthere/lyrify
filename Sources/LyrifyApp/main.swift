@@ -10,13 +10,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: OverlayController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let anchorSource = PlaybackAnchorSource(bridge: SpotifyBridge())
+        // Shared with OverlayController below — one Spotify truth, not one
+        // bridge per subscriber (same reasoning as `PlaybackAnchorSource`'s
+        // own doc comment), and it keeps `isAutomationPermitted` consistent
+        // across both.
+        let bridge = SpotifyBridge()
+        let anchorSource = PlaybackAnchorSource(bridge: bridge)
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
+        let artworkProvider = ArtworkProvider(transport: URLSessionLyricsTransport())
         let overlayVisibility = OverlayVisibilityPreference()
         let overlayPosition = OverlayPositionPreference()
 
         let overlay = OverlayController(
             anchorSource: anchorSource,
+            bridge: bridge,
+            artworkProvider: artworkProvider,
             visibilityPreference: overlayVisibility,
             positionPreference: overlayPosition
         )

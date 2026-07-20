@@ -1,8 +1,10 @@
 import Foundation
 
-/// How the lyrics provider reaches the network.
+/// A plain HTTP GET, generic enough that `LyricsProvider` and
+/// `ArtworkProvider` both reach the network through it rather than each
+/// growing their own near-identical transport.
 ///
-/// The port exists so the whole lookup pipeline — stepping, Matching,
+/// The port exists so a whole lookup pipeline — stepping, Matching,
 /// remembering — can be driven by a scripted fake in tests; the production
 /// implementation is a thin URLSession wrapper in the app target that adds
 /// Lyrify's honest User-Agent (ADR-0001).

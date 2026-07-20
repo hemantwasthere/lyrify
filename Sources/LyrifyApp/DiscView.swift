@@ -1,8 +1,7 @@
 import AppKit
 
-/// The Overlay's Minimized form: a small circle with a placeholder image.
-/// Real album art replaces the placeholder in a later ticket; spinning with
-/// playback in another.
+/// The Overlay's Minimized form: a small circle showing the current Track's
+/// album art, or a placeholder when none is known yet or none exists.
 ///
 /// Deliberately untested — a rendering leaf with no decisions of its own.
 final class DiscView: NSView {
@@ -10,12 +9,19 @@ final class DiscView: NSView {
 
     /// An `NSImageView` that never intercepts a click — every mouse-down
     /// must reach the window's background so `isMovableByWindowBackground`
-    /// can start a drag, even one that begins right on the icon.
+    /// can start a drag, even one that begins right on the icon or the art.
     private final class PassthroughImageView: NSImageView {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 
     private let imageView = PassthroughImageView()
+
+    private static var placeholderImage: NSImage? {
+        NSImage(systemSymbolName: "music.note", accessibilityDescription: "Lyrify")?
+            .withSymbolConfiguration(.init(pointSize: 20, weight: .regular))
+    }
+
+    private static let placeholderTint = NSColor.white.withAlphaComponent(0.6)
 
     init() {
         super.init(frame: NSRect(origin: .zero, size: NSSize(width: Self.diameter, height: Self.diameter)))
@@ -27,18 +33,22 @@ final class DiscView: NSView {
         layer?.borderWidth = 1
         layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
 
-        imageView.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "Lyrify")
-        imageView.contentTintColor = NSColor.white.withAlphaComponent(0.6)
-        imageView.imageScaling = .scaleProportionallyUpOrDown
+        // Fills the disc exactly — the circular mask above clips whatever
+        // doesn't fit, the same way a physical disc's label is cut round.
+        // `.scaleProportionallyDown` never enlarges: the small placeholder
+        // icon stays small and centered, while real album art (always
+        // larger than 56pt) scales down to fill.
+        imageView.image = Self.placeholderImage
+        imageView.contentTintColor = Self.placeholderTint
+        imageView.imageScaling = .scaleProportionallyDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(imageView)
 
-        let inset: CGFloat = 16
         NSLayoutConstraint.activate([
-            imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            imageView.widthAnchor.constraint(equalToConstant: Self.diameter - inset * 2),
-            imageView.heightAnchor.constraint(equalToConstant: Self.diameter - inset * 2),
+            imageView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
 
@@ -52,5 +62,18 @@ final class DiscView: NSView {
     /// circularly symmetric, so only the artwork needs to turn.
     func update(rotationDegrees: Double) {
         imageView.frameCenterRotation = CGFloat(rotationDegrees)
+    }
+
+    /// Shows real album art. No tint — the art speaks for itself.
+    func updateArtwork(_ image: NSImage) {
+        imageView.contentTintColor = nil
+        imageView.image = image
+    }
+
+    /// Back to the placeholder — no artwork known yet for the current
+    /// Track, or a confirmed no-artwork outcome.
+    func updatePlaceholder() {
+        imageView.contentTintColor = Self.placeholderTint
+        imageView.image = Self.placeholderImage
     }
 }

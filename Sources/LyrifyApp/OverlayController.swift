@@ -102,7 +102,16 @@ final class OverlayController {
         let startsExpanded = expansionPreference.isExpanded
         let initialView: NSView = startsExpanded ? nowPlayingView : discView
         let initialSize = startsExpanded ? (sizePreference.size ?? NowPlayingView.size) : initialView.frame.size
-        let initialOrigin = positionPreference.origin ?? Self.defaultOrigin(for: initialSize)
+
+        // A remembered position can go stale between launches — a display
+        // disconnected, a screen arrangement changed — and must never leave
+        // the Overlay stranded off every currently attached screen.
+        let initialOrigin = OverlayOrigin.resolve(
+            remembered: positionPreference.origin,
+            size: initialSize,
+            screens: NSScreen.screens.map(\.frame),
+            fallback: Self.defaultOrigin(for: initialSize)
+        )
 
         self.window = OverlayWindow(contentView: initialView)
         window.setFrame(NSRect(origin: initialOrigin, size: initialSize), display: true)

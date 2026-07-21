@@ -48,12 +48,16 @@ final class LyricsCardView: NSView {
             label.maximumNumberOfLines = 1
             label.isHidden = true
             label.translatesAutoresizingMaskIntoConstraints = false
+            labels.append(label)
+            stack.addArrangedSubview(label)
             // Relative to this view's own width, not a fixed constant: the
             // card is resizable now, so a hardcoded cap would stay stale as
             // it grows wider, letting truncation kick in far too early.
+            // Must come after addArrangedSubview: activating a constraint
+            // between the label and this view before the label is anywhere
+            // in this view's hierarchy has no common ancestor to resolve
+            // against, and Auto Layout raises for it.
             label.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -32).isActive = true
-            labels.append(label)
-            stack.addArrangedSubview(label)
         }
 
         NSLayoutConstraint.activate([

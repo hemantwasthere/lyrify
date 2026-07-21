@@ -1,5 +1,7 @@
 # The Overlay becomes a draggable, resizable widget, not a click-through peripheral
 
+_Superseded by [ADR-0008](0008-the-overlay-becomes-one-fixed-size-widget-with-two-faces.md) — the Minimized/Expanded two-state split and user-resizing this ADR describes are retired; kept here for the reasoning that led to and away from the click-through peripheral design._
+
 ADR-0004's peripheral-vision design — click-through, never focus, notch-or-pill — traded interactivity for staying out of the way. Real use surfaced two problems with it: the notch-straddling form visually collided with the system menu bar's own status items, since both draw into the same reserved strip beside the notch; and, independently of that bug, it just wasn't a good-looking way to show lyrics. The Overlay is now a single non-activating panel — still never taking keyboard focus, so it can't steal focus from whatever the listener is doing elsewhere — but it accepts mouse input directly: click-and-drag anywhere on its body moves it immediately, with no separate activation step first. It has two states: Minimized, a small spinning Disc of album art, and Expanded, a resizable card toggling between its Now Playing view (controls, revealed on hover) and its Lyrics view. Placement — the pill-vs-notch choice, the chosen-display submenu — is retired entirely; a draggable window makes "which display, and where on it" a physical act, not a menu choice.
 
 ## Considered Options

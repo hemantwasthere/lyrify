@@ -1,13 +1,16 @@
 import AppKit
 import LyrifyCore
+import QuartzCore
 
-/// The Overlay's Expanded form: album art or the Lyrics view at rest —
-/// toggled by the lyrics button — with previous / play-pause / next /
-/// lyrics / seek / volume controls revealed on hover and faded back out the
-/// moment the mouse leaves, regardless of which background is showing.
-/// Clicking any non-interactive area (via `onClick`, inherited) collapses
-/// back to the Disc; dragging anywhere moves the Overlay, exactly like the
-/// Disc.
+/// The Overlay's one and only window content, fixed at `size` regardless of
+/// what it's showing: the Now Playing face (a small spinning Disc of album
+/// art alongside the current Track's title and artist) or the Lyrics face
+/// (`LyricsCardView`) — toggled by the lyrics button and crossfaded between,
+/// never resized. Previous / play-pause / next / lyrics / seek / volume
+/// controls are revealed on hover over either face and faded back out the
+/// moment the mouse leaves. Clicking any non-interactive area (inherited
+/// from `DraggableBackgroundView`) only ever starts a drag — there is no
+/// more expand/collapse gesture, since there's nothing left to expand into.
 ///
 /// Seek and volume only commit on mouse-up, not on every intermediate
 /// value — dragging either shouldn't fire a live AppleScript command for
@@ -16,8 +19,11 @@ import LyrifyCore
 ///
 /// Deliberately untested — AppKit event handling and layout verified by
 /// hand.
-final class NowPlayingView: DraggableBackgroundView {
-    static let size = NSSize(width: 260, height: 96)
+final class OverlayCardView: DraggableBackgroundView {
+    static let size = NSSize(width: 220, height: 96)
+    static let discDiameter: CGFloat = 40
+
+    private static let crossfadeDuration: TimeInterval = 0.2
 
     var onTogglePlayPause: (() -> Void)?
     var onSkipToNext: (() -> Void)?
@@ -26,8 +32,11 @@ final class NowPlayingView: DraggableBackgroundView {
     var onVolumeChange: ((Int) -> Void)?
     var onToggleLyrics: (() -> Void)?
 
-    private let artView = PassthroughImageView()
-    private let lyricsView = LyricsCardView()
+    private let nowPlayingFace = NSView()
+    private let discImageView = PassthroughImageView()
+    private let titleLabel = PassthroughLabel(labelWithString: "")
+    private let artistLabel = PassthroughLabel(labelWithString: "")
+    private let lyricsFace = LyricsCardView()
     private let controlsOverlay = NSView()
     private let seekSlider = NSSlider()
     private let volumeSlider = NSSlider()
@@ -48,28 +57,28 @@ final class NowPlayingView: DraggableBackgroundView {
         layer?.borderWidth = 1
         layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
 
-        artView.image = OverlayArtworkPlaceholder.image(pointSize: 28)
-        artView.contentTintColor = OverlayArtworkPlaceholder.tint
-        artView.imageScaling = .scaleProportionallyDown
-        artView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(artView)
-
+        // Without an explicit constraint of its own, this view's width is
+        // otherwise ambiguous to Auto Layout beyond its subviews' internal
+        // demands — the title/artist labels' natural text width would win
+        // out over the fixed size the whole point of this ticket is to
+        // guarantee.
+        translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            artView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            artView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            artView.topAnchor.constraint(equalTo: topAnchor),
-            artView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            widthAnchor.constraint(equalToConstant: Self.size.width),
+            heightAnchor.constraint(equalToConstant: Self.size.height),
         ])
 
-        lyricsView.isHidden = true
-        lyricsView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(lyricsView)
+        configureNowPlayingFace()
+
+        lyricsFace.isHidden = true
+        lyricsFace.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(lyricsFace)
 
         NSLayoutConstraint.activate([
-            lyricsView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            lyricsView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            lyricsView.topAnchor.constraint(equalTo: topAnchor),
-            lyricsView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            lyricsFace.leadingAnchor.constraint(equalTo: leadingAnchor),
+            lyricsFace.trailingAnchor.constraint(equalTo: trailingAnchor),
+            lyricsFace.topAnchor.constraint(equalTo: topAnchor),
+            lyricsFace.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
         configureControlsOverlay()
@@ -105,17 +114,37 @@ final class NowPlayingView: DraggableBackgroundView {
         controlsOverlay.animator().alphaValue = 0
     }
 
-    /// Shows real album art. No tint — the art speaks for itself.
-    func updateArtwork(_ image: NSImage) {
-        artView.contentTintColor = nil
-        artView.image = image
+    /// Rotates the Disc's artwork to `degrees` — `DiscRotation`'s current
+    /// estimate, or its frozen angle while paused. A CALayer transform,
+    /// not `NSView.frameCenterRotation`: the latter mutates the view's own
+    /// frame, which fights Auto Layout's own relayout on every pass and
+    /// produced a visibly broken spin; a layer transform is purely a
+    /// render-time effect Auto Layout never looks at.
+    func update(rotationDegrees: Double) {
+        let radians = CGFloat(rotationDegrees) * .pi / 180
+        discImageView.layer?.transform = CATransform3DMakeRotation(radians, 0, 0, 1)
     }
 
-    /// Back to the placeholder — no artwork known yet for the current
-    /// Track, or a confirmed no-artwork outcome.
+    /// Shows real album art. No tint — the art speaks for itself.
+    func updateArtwork(_ image: NSImage) {
+        discImageView.contentTintColor = nil
+        discImageView.image = image
+    }
+
+    /// Back to the placeholder — no artwork or track name known yet, or a
+    /// confirmed no-artwork outcome. Real track info follows immediately
+    /// via `updateTrackInfo` whenever a Track is actually known.
     func updatePlaceholder() {
-        artView.contentTintColor = OverlayArtworkPlaceholder.tint
-        artView.image = OverlayArtworkPlaceholder.image(pointSize: 28)
+        discImageView.contentTintColor = OverlayArtworkPlaceholder.tint
+        discImageView.image = OverlayArtworkPlaceholder.image(pointSize: 16)
+        titleLabel.stringValue = LyricsCardView.nothingPlayingText
+        artistLabel.stringValue = ""
+    }
+
+    /// The current Track's name and artist, shown on the Now Playing face.
+    func updateTrackInfo(name: String, artist: String) {
+        titleLabel.stringValue = name
+        artistLabel.stringValue = artist
     }
 
     func update(isPlaying: Bool) {
@@ -123,27 +152,25 @@ final class NowPlayingView: DraggableBackgroundView {
         playPauseButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Play/Pause")
     }
 
-    /// Swaps the background to the Lyrics view. The controls overlay above
-    /// it is unaffected — hovering still reveals the same transport, seek,
-    /// and volume controls, so playback stays reachable while reading along.
+    /// Crossfades to the Lyrics face. The controls overlay above it is
+    /// unaffected — hovering still reveals the same transport, seek, and
+    /// volume controls, so playback stays reachable while reading along.
     func showLyrics() {
-        lyricsView.isHidden = false
-        artView.isHidden = true
+        crossfade(from: nowPlayingFace, to: lyricsFace)
         lyricsButton.contentTintColor = .white
     }
 
-    /// Back to album art.
-    func showArtwork() {
-        lyricsView.isHidden = true
-        artView.isHidden = false
+    /// Crossfades back to the Now Playing face.
+    func showNowPlaying() {
+        crossfade(from: lyricsFace, to: nowPlayingFace)
         lyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
     }
 
-    /// What the Lyrics view shows — forwarded straight to `LyricsCardView`,
-    /// updated regardless of whether it's currently the visible background,
-    /// so it's already current the moment the listener switches to it.
+    /// What the Lyrics face shows — forwarded straight to `LyricsCardView`,
+    /// updated regardless of whether it's currently the visible face, so
+    /// it's already current the moment the listener switches to it.
     func updateLyrics(_ content: LyricsCardView.Content) {
-        lyricsView.update(with: content)
+        lyricsFace.update(with: content)
     }
 
     /// Sets the seek slider's range to the current Track's duration. Called
@@ -162,13 +189,87 @@ final class NowPlayingView: DraggableBackgroundView {
     }
 
     /// Sets the volume slider's thumb to Spotify's actual current volume —
-    /// called once when the card expands, so the first drag starts from
-    /// the real value rather than jumping Spotify's volume to wherever the
-    /// thumb happened to be drawn. Ignored while being dragged, same as
-    /// `updateSeek`.
+    /// called once when the controls first appear, so the first drag
+    /// starts from the real value rather than jumping Spotify's volume to
+    /// wherever the thumb happened to be drawn. Ignored while being
+    /// dragged, same as `updateSeek`.
     func updateVolume(_ percent: Int) {
         guard !isDraggingVolume else { return }
         volumeSlider.doubleValue = Double(percent)
+    }
+
+    /// Fades `from` out and `to` in together, leaving only `to` visible
+    /// (and un-hidden) once the animation settles — a plain `isHidden`
+    /// toggle would jump instantly, which is what this replaces.
+    private func crossfade(from: NSView, to: NSView) {
+        to.alphaValue = 0
+        to.isHidden = false
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.crossfadeDuration
+            from.animator().alphaValue = 0
+            to.animator().alphaValue = 1
+        } completionHandler: {
+            // AppKit always calls this back on the main thread, but the
+            // completion handler's type isn't itself @MainActor — same
+            // situation as `OverlayController`'s NotificationCenter/Timer
+            // callbacks.
+            MainActor.assumeIsolated {
+                from.isHidden = true
+            }
+        }
+    }
+
+    private func configureNowPlayingFace() {
+        discImageView.wantsLayer = true
+        discImageView.layer?.cornerRadius = Self.discDiameter / 2
+        discImageView.layer?.masksToBounds = true
+        // Fills the disc exactly — the circular mask above clips whatever
+        // doesn't fit, the same way a physical disc's label is cut round.
+        discImageView.image = OverlayArtworkPlaceholder.image(pointSize: 16)
+        discImageView.contentTintColor = OverlayArtworkPlaceholder.tint
+        discImageView.imageScaling = .scaleProportionallyDown
+        discImageView.translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.textColor = .white
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.maximumNumberOfLines = 1
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        artistLabel.font = .systemFont(ofSize: 11, weight: .regular)
+        artistLabel.textColor = .white.withAlphaComponent(0.7)
+        artistLabel.lineBreakMode = .byTruncatingTail
+        artistLabel.maximumNumberOfLines = 1
+        artistLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let textStack = NSStackView(views: [titleLabel, artistLabel])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 2
+
+        let row = NSStackView(views: [discImageView, textStack])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        row.translatesAutoresizingMaskIntoConstraints = false
+
+        nowPlayingFace.translatesAutoresizingMaskIntoConstraints = false
+        nowPlayingFace.addSubview(row)
+        addSubview(nowPlayingFace)
+
+        NSLayoutConstraint.activate([
+            discImageView.widthAnchor.constraint(equalToConstant: Self.discDiameter),
+            discImageView.heightAnchor.constraint(equalToConstant: Self.discDiameter),
+
+            row.leadingAnchor.constraint(equalTo: nowPlayingFace.leadingAnchor, constant: 16),
+            row.trailingAnchor.constraint(lessThanOrEqualTo: nowPlayingFace.trailingAnchor, constant: -12),
+            row.centerYAnchor.constraint(equalTo: nowPlayingFace.centerYAnchor),
+
+            nowPlayingFace.leadingAnchor.constraint(equalTo: leadingAnchor),
+            nowPlayingFace.trailingAnchor.constraint(equalTo: trailingAnchor),
+            nowPlayingFace.topAnchor.constraint(equalTo: topAnchor),
+            nowPlayingFace.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
     }
 
     private func configureControlsOverlay() {

@@ -71,21 +71,21 @@ _Avoid_: Delay, latency adjustment, calibration
 ### Display
 
 **Overlay**:
-The single always-visible companion widget for the current Track: draggable anywhere by clicking and dragging its body directly, resizable, and never taking keyboard focus even though it accepts clicks — so it never steals focus from whatever the listener is doing elsewhere. Follows the listener across every desktop Space and fullscreen app.
+The single always-visible companion widget for the current Track, at one fixed size: draggable anywhere by clicking and dragging its body directly, and never taking keyboard focus even though it accepts clicks — so it never steals focus from whatever the listener is doing elsewhere. Follows the listener across every desktop Space and fullscreen app.
 _Avoid_: HUD (implies non-interactive; this one is dragged and clicked directly)
 
-**Minimized**:
-The Overlay's resting state: a small spinning Disc of album art and nothing else. Click the Disc to reach Expanded.
-_Avoid_: Collapsed, docked
+**Now Playing Face**:
+The Overlay's resting face: a small spinning Disc of the current Track's album art alongside its title and artist. Toggled to the Lyrics Face by the lyrics button, revealed among the playback controls on hover.
+_Avoid_: Minimized, collapsed (retired terms — see ADR-0008)
 
 **Disc**:
-The Minimized Overlay's shape — a small circle of the current Track's album art, spinning while the Track plays and freezing at its current angle when paused, resuming from that angle on play.
+The small circle of the current Track's album art shown on the Now Playing Face, spinning while the Track plays and freezing at its current angle when paused, resuming from that angle on play.
 _Avoid_: Bubble, sphere
 
-**Expanded**:
-The Overlay's larger, resizable state, reached by clicking the Disc: a card alternating between its Now Playing view (playback controls, revealed on hover so the resting card stays uncluttered) and its Lyrics view (the Active Line and Next Line, or more surrounding lines as the card is resized larger), toggled by the lyrics button. Clicking the album art again returns to Minimized.
-_Avoid_: Popover, panel (as the user-facing term — fine as an implementation detail)
+**Lyrics Face**:
+The Overlay's other face, reached by the lyrics button: the Active Line and its surrounding context, a fixed number of lines. Toggled back to the Now Playing Face by the same button.
+_Avoid_: Expanded, card (retired terms — see ADR-0008)
 
 **Idle State**:
-What the Lyrics view shows when the current Track has no Synced Lyrics to display — an honest "nothing found" message rather than stale or empty lines. The Track is still named via the album art and title shown throughout the Overlay regardless of lyrics availability.
+What the Lyrics Face shows when the current Track has no Synced Lyrics to display — an honest "nothing found" message rather than stale or empty lines. The Track is still named via the album art and title shown throughout the Overlay regardless of lyrics availability.
 _Avoid_: Empty state, fallback view

@@ -68,6 +68,24 @@ final class OverlayController {
     /// never does (unavailable, or no real artwork to blur).
     private var currentBlurredBackgroundImage: NSImage?
 
+    /// The `OverlayLayout` last resolved for the Overlay's current size —
+    /// kept alongside `overlayView.update(layout:)` (never read back from
+    /// it) so `refreshLyricsDisplay` knows how many lines to ask
+    /// `LyricsWindow` for without `OverlayCardView` exposing its own
+    /// private `lyricsFace`.
+    private var currentLayout: OverlayLayout = .compact
+
+    /// How many lines `refreshLyricsDisplay` asks `LyricsWindow` to
+    /// resolve — Full Layout's own resolved `LyricsScale`, or Compact
+    /// Layout's fixed default, mirroring exactly what `lyricsFace` itself
+    /// is currently showing courtesy of `OverlayCardView.update(layout:)`.
+    private var currentLyricsLineCount: Int {
+        switch currentLayout {
+        case .compact: return LyricsCardView.defaultLineCount
+        case .full(let scale): return scale.lineCount
+        }
+    }
+
     /// Redraws the spinning Disc and the seek slider between Anchors.
     /// Armed only while playing; a pause cancels it, freezing both exactly
     /// where they stopped.
@@ -139,7 +157,8 @@ final class OverlayController {
         window.minSize = Self.minimumSize
         window.maxSize = Self.maximumSize
         window.setFrame(NSRect(origin: initialOrigin, size: initialSize), display: true)
-        overlayView.update(layout: OverlayLayout.resolve(size: initialSize))
+        self.currentLayout = OverlayLayout.resolve(size: initialSize)
+        overlayView.update(layout: currentLayout)
         overlayView.update(blurredBackgroundEnabled: blurredBackgroundPreference.isEnabled)
 
         overlayView.onTogglePlayPause = { [weak self] in
@@ -221,7 +240,8 @@ final class OverlayController {
     private func sizeChanged() {
         let size = window.frame.size
         sizePreference.size = size
-        overlayView.update(layout: OverlayLayout.resolve(size: size))
+        currentLayout = OverlayLayout.resolve(size: size)
+        overlayView.update(layout: currentLayout)
     }
 
     private func toggleLyrics() {
@@ -390,12 +410,13 @@ final class OverlayController {
     /// lines, the same way it always has — the Overlay is always considered
     /// "visible" here, since the whole widget's own visibility is a
     /// separate concern, `refreshVisibility()`) with `LyricsWindow` for the
-    /// "genuine lyrics" case, at the fixed line count `LyricsCardView`
-    /// itself owns. `nextChange` goes unused: rather than arm a separate
-    /// precise per-transition timer the way the retired Overlay did, this
-    /// rides the same continuous redraw already driving the spin and seek
-    /// slider, which is frequent enough that no line change is ever visibly
-    /// late.
+    /// "genuine lyrics" case, at whatever line count `currentLayout`
+    /// currently calls for — Full Layout's own resolved scale, or Compact
+    /// Layout's fixed default. `nextChange` goes unused: rather than arm a
+    /// separate precise per-transition timer the way the retired Overlay
+    /// did, this rides the same continuous redraw already driving the spin
+    /// and seek slider, which is frequent enough that no line change is
+    /// ever visibly late.
     private func refreshLyricsDisplay(_ state: PlaybackState) {
         let answer = OverlayDisplay.resolve(isVisible: true, state: state, lyrics: currentLyrics)
 
@@ -415,7 +436,7 @@ final class OverlayController {
             // beyond the single Active/Next pair `OverlayDisplay` itself
             // answers.
             guard let position = state.position, let lyrics = currentLyrics else { return }
-            let entries = LyricsWindow.resolve(at: position, in: lyrics, lineCount: LyricsCardView.lineCount)
+            let entries = LyricsWindow.resolve(at: position, in: lyrics, lineCount: currentLyricsLineCount)
             overlayView.updateLyrics(.lines(entries))
         }
     }

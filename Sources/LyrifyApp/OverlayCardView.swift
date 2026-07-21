@@ -264,15 +264,22 @@ final class OverlayCardView: DraggableBackgroundView {
     }
 
     /// Switches between Compact and Full Layout's Now Playing content as
-    /// `OverlayLayout` resolves differently for the Overlay's current
-    /// size. Ignores which `LyricsScale` a `.full` case carries — that's
-    /// Full Layout's Lyrics Face scaling, a later ticket's concern, not
-    /// which face this method shows.
+    /// `OverlayLayout` resolves differently for the Overlay's current size,
+    /// and applies whichever Lyrics Face scale that layout calls for —
+    /// Full Layout's own resolved `LyricsScale`, or Compact Layout's fixed
+    /// default. Scale is applied unconditionally, on every call, not just
+    /// on a Compact/Full transition: a live resize drag keeps `.full`
+    /// resolving new scales as height changes without ever crossing back
+    /// to `.compact`, and those must all reach `lyricsFace` too.
     func update(layout: OverlayLayout) {
         let wasFullLayout = isFullLayout
         switch layout {
-        case .compact: isFullLayout = false
-        case .full: isFullLayout = true
+        case .compact:
+            isFullLayout = false
+            lyricsFace.updateScale(lineCount: LyricsCardView.defaultLineCount, fontSize: LyricsCardView.defaultFontSize)
+        case .full(let scale):
+            isFullLayout = true
+            lyricsFace.updateScale(lineCount: scale.lineCount, fontSize: scale.fontSize)
         }
 
         // `sizeChanged()` calls this on every tick of a live resize drag,

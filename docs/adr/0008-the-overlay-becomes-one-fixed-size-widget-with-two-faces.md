@@ -1,5 +1,7 @@
 # The Overlay becomes one fixed-size widget with two faces, not a resizable Minimized/Expanded pair
 
+_Superseded by [ADR-0009](0009-the-overlay-becomes-resizable-again-spotify-mini-player-style.md) — the fixed-size decision this ADR made is reversed once a concrete Spotify Mini Player reference justified reopening it; kept here for the reasoning that led to and away from the Minimized/Expanded split._
+
 ADR-0006's Minimized Disc / Expanded Card split, and the Expanded card's user-resizing, turned out to work against the Overlay's own point: real use reported the resting Disc as too easy to lose track of and the Expanded card as too large and plain-looking for something meant to sit unobtrusively on screen while a Track plays. The two states and the resize handle are retired in favor of one small widget, always the same fixed size, with two faces toggled by the same lyrics button as before: a Now Playing Face (a small spinning Disc of album art alongside the current Track's title and artist — the "info of the song" the old Now Playing view never actually showed) and a Lyrics Face (the Active Line and its surrounding context, now a fixed number of lines rather than one that grows with a resizable card's height). Switching faces crossfades rather than resizing the window, since both are the same size. Clicking the widget's background no longer does anything but drag — there is no more Disc-to-expand or card-to-collapse gesture, since there is nothing left to expand into.
 
 ## Considered Options

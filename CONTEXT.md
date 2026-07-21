@@ -71,15 +71,23 @@ _Avoid_: Delay, latency adjustment, calibration
 ### Display
 
 **Overlay**:
-The single always-visible companion widget for the current Track, at one fixed size: draggable anywhere by clicking and dragging its body directly, and never taking keyboard focus even though it accepts clicks — so it never steals focus from whatever the listener is doing elsewhere. Follows the listener across every desktop Space and fullscreen app.
+The single always-visible companion widget for the current Track: draggable anywhere by clicking and dragging its body directly, resizable by dragging its edge within sensible minimum and maximum bounds, and never taking keyboard focus even though it accepts clicks — so it never steals focus from whatever the listener is doing elsewhere. Follows the listener across every desktop Space and fullscreen app.
 _Avoid_: HUD (implies non-interactive; this one is dragged and clicked directly)
 
 **Now Playing Face**:
-The Overlay's resting face: a small spinning Disc of the current Track's album art alongside its title and artist. Toggled to the Lyrics Face by the lyrics button, revealed among the playback controls on hover.
+The Overlay's resting face: a small spinning Disc of the current Track's album art alongside its title and artist. Toggled to the Lyrics Face by the lyrics button, revealed among the playback controls on hover. Renders as Compact Layout or Full Layout depending on the Overlay's current size.
 _Avoid_: Minimized, collapsed (retired terms — see ADR-0008)
 
+**Compact Layout**:
+The Now Playing Face's rendering below Full Layout's size threshold: a small square thumbnail with the current Track's title and artist beside it, and a condensed set of controls revealed on hover. The only layout the Overlay renders today, at every size within its current resizable bounds.
+_Avoid_: Minimized, collapsed (retired terms — see ADR-0008)
+
+**Full Layout**:
+The Now Playing Face's rendering at larger sizes: a big square artwork area, an always-visible seek bar, and additional chrome, styled after Spotify's own Mini Player. Not yet rendered — the Overlay's resizable bounds are currently capped to stay within Compact Layout's own territory until a later ticket adds it.
+_Avoid_: Expanded (retired term — see ADR-0008)
+
 **Disc**:
-The small circle of the current Track's album art shown on the Now Playing Face, spinning while the Track plays and freezing at its current angle when paused, resuming from that angle on play.
+The small square of the current Track's album art shown on the Now Playing Face, spinning while the Track plays and freezing at its current angle when paused, resuming from that angle on play. A circle before ADR-0009's Mini Player–style redesign; the name persists for the behavior (the spin, freeze, and resume), not the shape.
 _Avoid_: Bubble, sphere
 
 **Lyrics Face**:

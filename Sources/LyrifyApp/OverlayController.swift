@@ -1,12 +1,12 @@
 import AppKit
 import LyrifyCore
 
-/// Owns the Overlay's window and its one fixed-size `OverlayCardView` —
-/// keeping it where the listener left it, spinning the Disc's artwork in
-/// time with playback, turning the controls into real Spotify commands
-/// (ADR-0007), and rendering the Lyrics face from the same
-/// `OverlayDisplay`/`LineSelection`/`LyricsWindow` seams the retired
-/// Overlay used.
+/// Owns the Overlay's window and its one `OverlayCardView` — keeping it
+/// where the listener left it and however large they last resized it to,
+/// spinning the Disc's artwork in time with playback, turning the controls
+/// into real Spotify commands (ADR-0007), and rendering the Lyrics face
+/// from the same `OverlayDisplay`/`LineSelection`/`LyricsWindow` seams the
+/// retired Overlay used.
 ///
 /// Deliberately untested — thin AppKit wiring verified by hand; the
 /// rotation angle, artwork outcome, and lyrics content it draws come from
@@ -21,6 +21,7 @@ final class OverlayController {
     private let artworkProvider: ArtworkProvider
     private let lyricsProvider: LyricsProvider
     private let positionPreference: OverlayPositionPreference
+    private let sizePreference: OverlaySizePreference
     private let visibilityPreference: OverlayVisibilityPreference
 
     private var rotation = DiscRotation()
@@ -59,10 +60,22 @@ final class OverlayController {
     private static let defaultTopInset: CGFloat = 8
     private static let defaultTrailingInset: CGFloat = 24
 
+    /// The smallest proven-usable Compact Layout — also the smallest the
+    /// listener can resize the Overlay down to.
+    private static let minimumSize = OverlayCardView.defaultSize
+
+    /// However wide the listener drags the Overlay, resizing stops here —
+    /// generous headroom for Compact Layout at a glance. Height stops just
+    /// short of `OverlayLayout.thresholdHeight`, so resizing can never
+    /// reach Full Layout's territory before it actually exists to render
+    /// (a later ticket raises this once it does).
+    private static let maximumSize = NSSize(width: 480, height: OverlayLayout.thresholdHeight - 1)
+
     // nonisolated(unsafe) so deinit may remove it; safe because it's written
     // once in init and never mutated again. Same rationale as
     // `SpotifyNotificationObserver`.
     private nonisolated(unsafe) var moveObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var resizeObserver: NSObjectProtocol?
 
     init(
         anchorSource: PlaybackAnchorSource,
@@ -70,7 +83,8 @@ final class OverlayController {
         artworkProvider: ArtworkProvider,
         lyricsProvider: LyricsProvider,
         visibilityPreference: OverlayVisibilityPreference,
-        positionPreference: OverlayPositionPreference
+        positionPreference: OverlayPositionPreference,
+        sizePreference: OverlaySizePreference
     ) {
         self.anchorSource = anchorSource
         self.bridge = bridge
@@ -78,11 +92,12 @@ final class OverlayController {
         self.lyricsProvider = lyricsProvider
         self.visibilityPreference = visibilityPreference
         self.positionPreference = positionPreference
+        self.sizePreference = sizePreference
 
         let overlayView = OverlayCardView()
         self.overlayView = overlayView
 
-        let initialSize = OverlayCardView.size
+        let initialSize = sizePreference.size ?? OverlayCardView.defaultSize
 
         // A remembered position can go stale between launches — a display
         // disconnected, a screen arrangement changed — and must never leave
@@ -95,7 +110,10 @@ final class OverlayController {
         )
 
         self.window = OverlayWindow(contentView: overlayView)
+        window.minSize = Self.minimumSize
+        window.maxSize = Self.maximumSize
         window.setFrame(NSRect(origin: initialOrigin, size: initialSize), display: true)
+        overlayView.update(layout: OverlayLayout.resolve(size: initialSize))
 
         overlayView.onTogglePlayPause = { [weak self] in
             guard let self else { return }
@@ -115,6 +133,14 @@ final class OverlayController {
             MainActor.assumeIsolated { self?.positionMoved() }
         }
 
+        resizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.sizeChanged() }
+        }
+
         refreshVisibility()
 
         Task { [weak self] in
@@ -131,6 +157,9 @@ final class OverlayController {
         if let moveObserver {
             NotificationCenter.default.removeObserver(moveObserver)
         }
+        if let resizeObserver {
+            NotificationCenter.default.removeObserver(resizeObserver)
+        }
     }
 
     /// What the status item's "Show Overlay" toggle calls after the
@@ -145,6 +174,12 @@ final class OverlayController {
 
     private func positionMoved() {
         positionPreference.origin = window.frame.origin
+    }
+
+    private func sizeChanged() {
+        let size = window.frame.size
+        sizePreference.size = size
+        overlayView.update(layout: OverlayLayout.resolve(size: size))
     }
 
     private func toggleLyrics() {

@@ -1,9 +1,12 @@
 import AppKit
 
-/// The Overlay's window: a borderless, non-activating, fixed-size panel
-/// that never takes keyboard focus. See ADR-0006, and the ticket that
-/// retired its old Minimized/Expanded two-state design in favor of one
-/// fixed-size `OverlayCardView`.
+/// The Overlay's window: a borderless, non-activating, resizable panel
+/// that never takes keyboard focus. See ADR-0006 and ADR-0009 — the
+/// latter reverses the ticket that made this a fixed-size panel, since a
+/// resizable, Spotify Mini Player–style widget is now the design target.
+/// `minSize`/`maxSize` are the caller's responsibility to set (see
+/// `OverlayController`), the same way the retired resizable card left them
+/// to its own controller rather than baking bounds in here.
 ///
 /// Dragging is handled by the content view (`DraggableBackgroundView`), not
 /// by `isMovableByWindowBackground` — that flag can't tell a click from the
@@ -14,7 +17,7 @@ final class OverlayWindow: NSPanel {
     init(contentView: NSView) {
         super.init(
             contentRect: NSRect(origin: .zero, size: contentView.frame.size),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
         )

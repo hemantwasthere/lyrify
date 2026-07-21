@@ -2,15 +2,21 @@ import AppKit
 import LyrifyCore
 import QuartzCore
 
-/// The Overlay's one and only window content, fixed at `size` regardless of
-/// what it's showing: the Now Playing face (a small spinning Disc of album
-/// art alongside the current Track's title and artist) or the Lyrics face
-/// (`LyricsCardView`) — toggled by the lyrics button and crossfaded between,
-/// never resized. Previous / play-pause / next / lyrics / seek / volume
-/// controls are revealed on hover over either face and faded back out the
-/// moment the mouse leaves. Clicking any non-interactive area (inherited
-/// from `DraggableBackgroundView`) only ever starts a drag — there is no
-/// more expand/collapse gesture, since there's nothing left to expand into.
+/// The Overlay's one and only window content — the Now Playing face (a
+/// small spinning Disc of album art alongside the current Track's title
+/// and artist) or the Lyrics face (`LyricsCardView`) — toggled by the
+/// lyrics button and crossfaded between. As the Overlay's window is now
+/// user-resizable (`OverlayWindow`), this view is sized directly by that
+/// window rather than pinning its own fixed size the way it used to;
+/// `defaultSize` remains only as the starting size before any resize is
+/// remembered. Rendering only ever shows Compact Layout for now, at
+/// whatever size the window resolves to — `OverlayLayout`'s Full Layout
+/// case lands in a later ticket. Previous / play-pause / next / lyrics /
+/// seek / volume controls are revealed on hover over either face and
+/// faded back out the moment the mouse leaves. Clicking any
+/// non-interactive area (inherited from `DraggableBackgroundView`) only
+/// ever starts a drag — there is no more expand/collapse gesture, since
+/// there's nothing left to expand into.
 ///
 /// Seek and volume only commit on mouse-up, not on every intermediate
 /// value — dragging either shouldn't fire a live AppleScript command for
@@ -20,8 +26,21 @@ import QuartzCore
 /// Deliberately untested — AppKit event handling and layout verified by
 /// hand.
 final class OverlayCardView: DraggableBackgroundView {
-    static let size = NSSize(width: 220, height: 96)
-    static let discDiameter: CGFloat = 40
+    /// The Overlay's size before any resize has ever been remembered —
+    /// also `OverlayWindow`'s minimum resizable size, since it's the
+    /// smallest proven-usable Compact Layout.
+    static let defaultSize = NSSize(width: 220, height: 96)
+
+    /// Compact Layout's thumbnail is a small square, not the circular Disc
+    /// the pre-resizable widget used — matching Spotify's own Mini Player,
+    /// which ADR-0009 names as the concrete reference for this redesign.
+    static let discSize: CGFloat = 40
+    private static let discCornerRadius: CGFloat = 8
+
+    /// Not tied to the view's actual (now-variable) height — a fixed,
+    /// reasonable radius for Compact Layout at any size. Full Layout's own
+    /// visual treatment is a later ticket's concern.
+    private static let cornerRadius: CGFloat = 24
 
     private static let crossfadeDuration: TimeInterval = 0.2
 
@@ -48,25 +67,19 @@ final class OverlayCardView: DraggableBackgroundView {
     private var trackingArea: NSTrackingArea?
 
     init() {
-        super.init(frame: NSRect(origin: .zero, size: Self.size))
+        super.init(frame: NSRect(origin: .zero, size: Self.defaultSize))
 
         wantsLayer = true
-        layer?.cornerRadius = Self.size.height / 4
+        layer?.cornerRadius = Self.cornerRadius
         layer?.masksToBounds = true
         layer?.backgroundColor = NSColor.black.withAlphaComponent(0.85).cgColor
         layer?.borderWidth = 1
         layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
 
-        // Without an explicit constraint of its own, this view's width is
-        // otherwise ambiguous to Auto Layout beyond its subviews' internal
-        // demands — the title/artist labels' natural text width would win
-        // out over the fixed size the whole point of this ticket is to
-        // guarantee.
+        // No fixed width/height constraint of its own: as the Overlay's
+        // window content view, its frame is set directly by the (now
+        // resizable) window, not derived from its subviews' own demands.
         translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: Self.size.width),
-            heightAnchor.constraint(equalToConstant: Self.size.height),
-        ])
 
         configureNowPlayingFace()
 
@@ -112,6 +125,21 @@ final class OverlayCardView: DraggableBackgroundView {
 
     override func mouseExited(with event: NSEvent) {
         controlsOverlay.animator().alphaValue = 0
+    }
+
+    /// Renders whatever `OverlayLayout` resolves for the Overlay's current
+    /// size. Only Compact Layout is implemented today; Full Layout
+    /// rendering is a later ticket's job. `OverlayController`'s resize
+    /// bounds keep every currently reachable size resolving to `.compact`,
+    /// so this only ever asserts that invariant rather than actually
+    /// branching — the assertion is what should fail loudly the moment
+    /// that stops being true, rather than silently rendering the wrong
+    /// thing.
+    func update(layout: OverlayLayout) {
+        guard case .compact = layout else {
+            assertionFailure("Full Layout isn't rendered yet — OverlayController's maxSize should keep this unreachable")
+            return
+        }
     }
 
     /// Rotates the Disc's artwork to `degrees` — `DiscRotation`'s current
@@ -221,10 +249,10 @@ final class OverlayCardView: DraggableBackgroundView {
 
     private func configureNowPlayingFace() {
         discImageView.wantsLayer = true
-        discImageView.layer?.cornerRadius = Self.discDiameter / 2
+        discImageView.layer?.cornerRadius = Self.discCornerRadius
         discImageView.layer?.masksToBounds = true
-        // Fills the disc exactly — the circular mask above clips whatever
-        // doesn't fit, the same way a physical disc's label is cut round.
+        // Fills the disc exactly — the rounded-square mask above clips
+        // whatever doesn't fit.
         discImageView.image = OverlayArtworkPlaceholder.image(pointSize: 16)
         discImageView.contentTintColor = OverlayArtworkPlaceholder.tint
         discImageView.imageScaling = .scaleProportionallyDown
@@ -258,8 +286,8 @@ final class OverlayCardView: DraggableBackgroundView {
         addSubview(nowPlayingFace)
 
         NSLayoutConstraint.activate([
-            discImageView.widthAnchor.constraint(equalToConstant: Self.discDiameter),
-            discImageView.heightAnchor.constraint(equalToConstant: Self.discDiameter),
+            discImageView.widthAnchor.constraint(equalToConstant: Self.discSize),
+            discImageView.heightAnchor.constraint(equalToConstant: Self.discSize),
 
             row.leadingAnchor.constraint(equalTo: nowPlayingFace.leadingAnchor, constant: 16),
             row.trailingAnchor.constraint(lessThanOrEqualTo: nowPlayingFace.trailingAnchor, constant: -12),
@@ -326,7 +354,9 @@ final class OverlayCardView: DraggableBackgroundView {
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: controlsOverlay.centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: controlsOverlay.centerYAnchor),
-            seekSlider.widthAnchor.constraint(equalToConstant: Self.size.width - 32),
+            // Relative to the card's own (now resizable) width, not a fixed
+            // constant, so the seek bar keeps filling it at any size.
+            seekSlider.widthAnchor.constraint(equalTo: controlsOverlay.widthAnchor, constant: -32),
             volumeSlider.widthAnchor.constraint(equalToConstant: 100),
         ])
     }

@@ -90,6 +90,7 @@ final class OverlayCardView: DraggableBackgroundView {
     var onToggleLyrics: (() -> Void)?
     var onToggleShuffle: (() -> Void)?
     var onToggleRepeat: (() -> Void)?
+    var onShare: (() -> Void)?
     var onHideOverlay: (() -> Void)?
     var onToggleBlurredBackground: ((Bool) -> Void)?
 
@@ -768,7 +769,7 @@ final class OverlayCardView: DraggableBackgroundView {
     }
 
     /// Full Layout's transport row — shuffle, previous, play/pause, next,
-    /// repeat — overlaid on the artwork and faded in/out on hover
+    /// repeat, share — overlaid on the artwork and faded in/out on hover
     /// (`mouseEntered`/`mouseExited`), alongside `fullTopChromeBar`. A
     /// `fullFace` subview, not a sibling of `self` the way `controlsOverlay`
     /// and `fullLyricsButton` are: it has no need to survive into the
@@ -789,8 +790,12 @@ final class OverlayCardView: DraggableBackgroundView {
 
         let nextButton = transportButton(symbolName: "forward.fill", action: #selector(nextTapped))
         let repeatButton = transportButton(symbolName: "repeat", action: #selector(repeatTapped))
+        // Repurposes the transport row's own share affordance for
+        // `SpotifyShareLink`'s clipboard copy rather than opening a share
+        // sheet, per the ticket's own decision.
+        let shareButton = transportButton(symbolName: "square.and.arrow.up", action: #selector(shareTapped))
 
-        let row = NSStackView(views: [shuffleButton, previousButton, fullPlayPauseButton, nextButton, repeatButton])
+        let row = NSStackView(views: [shuffleButton, previousButton, fullPlayPauseButton, nextButton, repeatButton, shareButton])
         row.orientation = .horizontal
         row.spacing = 20
         row.translatesAutoresizingMaskIntoConstraints = false
@@ -1029,6 +1034,10 @@ final class OverlayCardView: DraggableBackgroundView {
 
     @objc private func repeatTapped() {
         onToggleRepeat?()
+    }
+
+    @objc private func shareTapped() {
+        onShare?()
     }
 
     @objc private func hideTapped() {

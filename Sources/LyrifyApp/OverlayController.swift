@@ -172,6 +172,7 @@ final class OverlayController {
         overlayView.onToggleLyrics = { [weak self] in self?.toggleLyrics() }
         overlayView.onToggleShuffle = { [weak self] in try? self?.bridge.toggleShuffle() }
         overlayView.onToggleRepeat = { [weak self] in try? self?.bridge.toggleRepeat() }
+        overlayView.onShare = { [weak self] in self?.shareCurrentTrack() }
         // Same visibility mechanism the menu bar's "Show Overlay" toggle
         // uses — not a parallel one.
         overlayView.onHideOverlay = { [weak self] in
@@ -242,6 +243,17 @@ final class OverlayController {
         sizePreference.size = size
         currentLayout = OverlayLayout.resolve(size: size)
         overlayView.update(layout: currentLayout)
+    }
+
+    /// Copies the current Track's Spotify share link to the clipboard —
+    /// does nothing at all, not even clearing the clipboard, when there's
+    /// no valid link to share (`SpotifyShareLink`'s own Fail Closed policy
+    /// for a Non-Lyrical Item or no current Track).
+    private func shareCurrentTrack() {
+        guard let url = SpotifyShareLink.resolve(uri: currentTrackURI) else { return }
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
     }
 
     private func toggleLyrics() {

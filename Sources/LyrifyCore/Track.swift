@@ -37,10 +37,17 @@ public struct Track: Equatable, Sendable {
         Int(duration.rounded())
     }
 
+    /// The URI shape a real Spotify Track carries, as opposed to whatever
+    /// different shape a Non-Lyrical Item's URI has (`spotify:ad:...`,
+    /// `spotify:episode:...`, `spotify:local:...`). Shared with
+    /// `SpotifyShareLink`, which needs the same distinction to avoid
+    /// resolving a share link for anything this isn't.
+    static let trackURIPrefix = "spotify:track:"
+
     /// Whether lyrics could ever exist for this item. Anything that is not a
     /// Spotify track — an advertisement, a podcast episode, a local file — is
     /// a Non-Lyrical Item, and querying a lyrics database for one is nonsense.
     public var isLyrical: Bool {
-        uri.hasPrefix("spotify:track:")
+        uri.hasPrefix(Self.trackURIPrefix)
     }
 }

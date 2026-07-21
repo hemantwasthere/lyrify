@@ -19,10 +19,12 @@ final class OverlayController {
     private let anchorSource: PlaybackAnchorSource
     private let bridge: SpotifyBridge
     private let artworkProvider: ArtworkProvider
+    private let blurredArtworkProvider: BlurredArtworkProvider
     private let lyricsProvider: LyricsProvider
     private let positionPreference: OverlayPositionPreference
     private let sizePreference: OverlaySizePreference
     private let visibilityPreference: OverlayVisibilityPreference
+    private let blurredBackgroundPreference: BlurredBackgroundPreference
 
     private var rotation = DiscRotation()
 
@@ -55,6 +57,16 @@ final class OverlayController {
     /// rule: a slow answer for an abandoned Track must never overwrite
     /// what's on screen for the current one.
     private var currentTrackURI: String?
+
+    /// The current Track's plain artwork, once fetched — Full Layout's
+    /// background falls back to this whenever the blurred treatment isn't
+    /// ready yet, or the listener has turned it off.
+    private var currentArtworkImage: NSImage?
+
+    /// The current Track's blurred/color-boosted background, once
+    /// computed — nil until `reconcileBlurredBackground` finishes, or if it
+    /// never does (unavailable, or no real artwork to blur).
+    private var currentBlurredBackgroundImage: NSImage?
 
     /// Redraws the spinning Disc and the seek slider between Anchors.
     /// Armed only while playing; a pause cancels it, freezing both exactly
@@ -91,18 +103,22 @@ final class OverlayController {
         anchorSource: PlaybackAnchorSource,
         bridge: SpotifyBridge,
         artworkProvider: ArtworkProvider,
+        blurredArtworkProvider: BlurredArtworkProvider,
         lyricsProvider: LyricsProvider,
         visibilityPreference: OverlayVisibilityPreference,
         positionPreference: OverlayPositionPreference,
-        sizePreference: OverlaySizePreference
+        sizePreference: OverlaySizePreference,
+        blurredBackgroundPreference: BlurredBackgroundPreference
     ) {
         self.anchorSource = anchorSource
         self.bridge = bridge
         self.artworkProvider = artworkProvider
+        self.blurredArtworkProvider = blurredArtworkProvider
         self.lyricsProvider = lyricsProvider
         self.visibilityPreference = visibilityPreference
         self.positionPreference = positionPreference
         self.sizePreference = sizePreference
+        self.blurredBackgroundPreference = blurredBackgroundPreference
 
         let overlayView = OverlayCardView()
         self.overlayView = overlayView
@@ -124,6 +140,7 @@ final class OverlayController {
         window.maxSize = Self.maximumSize
         window.setFrame(NSRect(origin: initialOrigin, size: initialSize), display: true)
         overlayView.update(layout: OverlayLayout.resolve(size: initialSize))
+        overlayView.update(blurredBackgroundEnabled: blurredBackgroundPreference.isEnabled)
 
         overlayView.onTogglePlayPause = { [weak self] in
             guard let self else { return }
@@ -144,8 +161,11 @@ final class OverlayController {
             self.refreshVisibility()
             self.onVisibilityChangedByHideButton?()
         }
-        // `onOpenSettings` is left unset: the settings panel itself is a
-        // later ticket (#37), this one only makes the icon reachable.
+        overlayView.onToggleBlurredBackground = { [weak self] isEnabled in
+            guard let self else { return }
+            self.blurredBackgroundPreference.isEnabled = isEnabled
+            self.applyBackgroundImage()
+        }
 
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
@@ -236,8 +256,40 @@ final class OverlayController {
 
             guard self.currentTrackURI == track.uri else { return }
             guard case .found(let data) = outcome, let image = NSImage(data: data) else { return }
+            self.currentArtworkImage = image
             self.overlayView.updateArtwork(image)
+            self.applyBackgroundImage()
+
+            self.reconcileBlurredBackground(for: track, artwork: data)
         }
+    }
+
+    /// Layered on top of `reconcileArtwork`'s own fetch, per the ticket's
+    /// own note — no fetch path of its own, just the bytes already found.
+    /// Only called once real artwork bytes are confirmed in hand, so
+    /// `BlurredArtworkProvider` never needs to reason about `.noArtwork`/
+    /// `.unavailable` outcomes itself.
+    private func reconcileBlurredBackground(for track: Track, artwork data: Data) {
+        Task { [weak self] in
+            guard let self else { return }
+            let outcome = await self.blurredArtworkProvider.blurredBackground(for: track, artwork: data)
+
+            guard self.currentTrackURI == track.uri else { return }
+            guard case .found(let blurredData) = outcome, let image = NSImage(data: blurredData) else { return }
+            self.currentBlurredBackgroundImage = image
+            self.applyBackgroundImage()
+        }
+    }
+
+    /// Whichever image Full Layout's background should currently show —
+    /// the blurred/color-boosted treatment when enabled and ready, the
+    /// plain artwork otherwise — recomputed whenever either the images or
+    /// the toggle itself changes, since this is the one place that knows
+    /// both.
+    private func applyBackgroundImage() {
+        guard let plainImage = currentArtworkImage else { return }
+        let image = blurredBackgroundPreference.isEnabled ? (currentBlurredBackgroundImage ?? plainImage) : plainImage
+        overlayView.updateBlurredBackground(image)
     }
 
     /// One lookup per Track, sharing `LyricsProvider` with the menu bar —
@@ -303,6 +355,8 @@ final class OverlayController {
             if currentTrackURI != nil {
                 currentTrackURI = nil
                 currentLyrics = nil
+                currentArtworkImage = nil
+                currentBlurredBackgroundImage = nil
                 overlayView.updatePlaceholder()
             }
             return
@@ -310,6 +364,8 @@ final class OverlayController {
         guard track.uri != currentTrackURI else { return }
         currentTrackURI = track.uri
         currentLyrics = nil
+        currentArtworkImage = nil
+        currentBlurredBackgroundImage = nil
 
         overlayView.updatePlaceholder()
         overlayView.updateTrackInfo(name: track.name, artist: track.artist)

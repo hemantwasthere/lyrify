@@ -94,6 +94,10 @@ _Avoid_: Bubble, sphere
 The Overlay's other face, reached by the lyrics button: the Active Line and its surrounding context, a fixed number of lines. Toggled back to the Now Playing Face by the same button.
 _Avoid_: Expanded, card (retired terms — see ADR-0008)
 
+**Settings Face**:
+The Overlay's third face, reached by Full Layout's settings icon: a single toggle for the blurred background, and a Done button that returns to whichever of the Now Playing Face or Lyrics Face was showing before it was opened.
+_Avoid_: Settings panel, preferences (this is a Face like the other two, not a separate kind of surface)
+
 **Idle State**:
 What the Lyrics Face shows when the current Track has no Synced Lyrics to display — an honest "nothing found" message rather than stale or empty lines. The Track is still named via the album art and title shown throughout the Overlay regardless of lyrics availability.
 _Avoid_: Empty state, fallback view

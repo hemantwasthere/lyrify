@@ -18,18 +18,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let anchorSource = PlaybackAnchorSource(bridge: bridge)
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
         let artworkProvider = ArtworkProvider(transport: URLSessionLyricsTransport())
+        let blurredArtworkProvider = BlurredArtworkProvider(blurring: CoreImageArtworkBlur())
         let overlayVisibility = OverlayVisibilityPreference()
         let overlayPosition = OverlayPositionPreference()
         let overlaySize = OverlaySizePreference()
+        let blurredBackground = BlurredBackgroundPreference()
 
         let overlay = OverlayController(
             anchorSource: anchorSource,
             bridge: bridge,
             artworkProvider: artworkProvider,
+            blurredArtworkProvider: blurredArtworkProvider,
             lyricsProvider: lyricsProvider,
             visibilityPreference: overlayVisibility,
             positionPreference: overlayPosition,
-            sizePreference: overlaySize
+            sizePreference: overlaySize,
+            blurredBackgroundPreference: blurredBackground
         )
         self.overlay = overlay
 

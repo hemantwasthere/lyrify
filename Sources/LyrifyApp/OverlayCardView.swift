@@ -17,11 +17,12 @@ import QuartzCore
 /// moment the mouse leaves; Full Layout reveals its own transport row
 /// (shuffle, previous, play/pause, next, repeat) overlaid on the artwork,
 /// and a top chrome bar (hide, drag-handle indicator, settings) above it,
-/// on that same hover — the settings icon has nothing behind it yet beyond
-/// reachability, and the blurred artwork background is still a later
-/// ticket. Clicking any non-interactive area (inherited from
-/// `DraggableBackgroundView`) only ever starts a drag — there is no more
-/// expand/collapse gesture, since there's nothing left to expand into.
+/// on that same hover. The settings icon opens a third face — a single
+/// toggle for Full Layout's blurred/color-boosted artwork background, and
+/// a Done button back to whichever face was showing before. Clicking any
+/// non-interactive area (inherited from `DraggableBackgroundView`) only
+/// ever starts a drag — there is no more expand/collapse gesture, since
+/// there's nothing left to expand into.
 ///
 /// Seek and volume only commit on mouse-up, not on every intermediate
 /// value — dragging either shouldn't fire a live AppleScript command for
@@ -67,6 +68,11 @@ final class OverlayCardView: DraggableBackgroundView {
     /// a tile, not a pill, at this size.
     private static let fullArtworkCornerRadius: CGFloat = 12
 
+    /// How much smaller the sharp artwork copy is than the square
+    /// background behind it — Spotify Mini Player's own proportions,
+    /// leaving the blurred/plain backdrop clearly visible around it.
+    private static let fullArtworkForegroundScale: CGFloat = 0.62
+
     private static let crossfadeDuration: TimeInterval = 0.2
 
     /// The top chrome bar's hide (red dot) button diameter.
@@ -85,7 +91,7 @@ final class OverlayCardView: DraggableBackgroundView {
     var onToggleShuffle: (() -> Void)?
     var onToggleRepeat: (() -> Void)?
     var onHideOverlay: (() -> Void)?
-    var onOpenSettings: (() -> Void)?
+    var onToggleBlurredBackground: ((Bool) -> Void)?
 
     private let compactFace = NSView()
     private let discImageView = PassthroughImageView()
@@ -93,6 +99,11 @@ final class OverlayCardView: DraggableBackgroundView {
     private let artistLabel = PassthroughLabel(labelWithString: "")
 
     private let fullFace = NSView()
+
+    /// The big square behind `fullArtworkView`'s now-smaller sharp copy —
+    /// either the blurred/color-boosted treatment, or (disabled, or before
+    /// it's ready) the same plain image `fullArtworkView` shows.
+    private let fullArtworkBackgroundView = PassthroughImageView()
     private let fullArtworkView = PassthroughImageView()
     private let fullTitleLabel = PassthroughLabel(labelWithString: "")
     private let fullArtistLabel = PassthroughLabel(labelWithString: "")
@@ -118,6 +129,22 @@ final class OverlayCardView: DraggableBackgroundView {
     private let volumeSlider = NSSlider()
     private let playPauseButton = NSButton()
     private let lyricsButton = NSButton()
+
+    /// The settings panel — a third face, reached via the settings icon and
+    /// returned from via its own Done button.
+    private let settingsFace = NSView()
+    private let blurredBackgroundSwitch = NSSwitch()
+    private let settingsDoneButton = NSButton()
+
+    /// Whether the Lyrics Face (rather than Now Playing content) was on
+    /// screen when the settings icon was tapped — so Done can crossfade
+    /// back to it specifically. Deliberately not a captured `NSView`
+    /// reference to "whichever Now Playing face was showing": a resize can
+    /// cross the Compact/Full boundary while Settings is open, and
+    /// `activeNowPlayingFace` (re-read fresh at Done time) always reflects
+    /// the *current* layout, where a stale capture from open-time would
+    /// not.
+    private var wasShowingLyricsBeforeSettings = false
 
     private var isDraggingSeek = false
     private var isDraggingVolume = false
@@ -191,6 +218,7 @@ final class OverlayCardView: DraggableBackgroundView {
         fullLyricsButton.isHidden = true
 
         configureControlsOverlay()
+        configureSettingsFace()
     }
 
     @available(*, unavailable)
@@ -281,10 +309,16 @@ final class OverlayCardView: DraggableBackgroundView {
         // moment the Lyrics face is showing.
         fullLyricsButton.isHidden = !isFullLayout
 
-        guard lyricsFace.isHidden else {
-            // The Lyrics face is showing — nothing to reveal until
-            // `showNowPlaying()` is called; `isFullLayout` alone remembers
-            // which Now Playing content that'll be.
+        guard lyricsFace.isHidden, settingsFace.isHidden else {
+            // The Lyrics or Settings face is showing — nothing to reveal
+            // until it's dismissed; `isFullLayout` alone remembers which
+            // Now Playing content that'll be. Settings needs the same
+            // treatment as Lyrics here: `addSubview(fullFace)` above always
+            // brings `fullFace` to the front of the z-order, which would
+            // otherwise bury whichever of these two is currently on top —
+            // forcing both hidden regardless of z-order sidesteps that
+            // entirely, since a hidden view never draws no matter how it
+            // stacks.
             compactFace.isHidden = true
             fullFace.isHidden = true
             return
@@ -306,14 +340,18 @@ final class OverlayCardView: DraggableBackgroundView {
     }
 
     /// Shows real album art on both Compact and Full Layout — no tint, the
-    /// art speaks for itself. Full Layout's own copy is a plain, un-rotated
-    /// display of the same image; the blurred, color-extracted background
-    /// behind it is a later ticket.
+    /// art speaks for itself. Full Layout's background defaults to this
+    /// same plain image too — showing it immediately, before the blurred
+    /// treatment finishes computing, and matching what "blurred background
+    /// off" itself shows; `updateBlurredBackground` overrides it once the
+    /// blur is ready and enabled.
     func updateArtwork(_ image: NSImage) {
         discImageView.contentTintColor = nil
         discImageView.image = image
         fullArtworkView.contentTintColor = nil
         fullArtworkView.image = image
+        fullArtworkBackgroundView.contentTintColor = nil
+        fullArtworkBackgroundView.image = image
     }
 
     /// Back to the placeholder — no artwork or track name known yet, or a
@@ -324,10 +362,27 @@ final class OverlayCardView: DraggableBackgroundView {
         discImageView.image = OverlayArtworkPlaceholder.image(pointSize: 16)
         fullArtworkView.contentTintColor = OverlayArtworkPlaceholder.tint
         fullArtworkView.image = OverlayArtworkPlaceholder.image(pointSize: 32)
+        fullArtworkBackgroundView.contentTintColor = OverlayArtworkPlaceholder.tint
+        fullArtworkBackgroundView.image = OverlayArtworkPlaceholder.image(pointSize: 32)
         titleLabel.stringValue = LyricsCardView.nothingPlayingText
         artistLabel.stringValue = ""
         fullTitleLabel.stringValue = LyricsCardView.nothingPlayingText
         fullArtistLabel.stringValue = ""
+    }
+
+    /// Full Layout's background once the blurred/color-boosted treatment
+    /// is ready and enabled — the caller (`OverlayController`) decides
+    /// whether that's this image or the plain artwork, since it's the one
+    /// holding both the cached blur and the current toggle state.
+    func updateBlurredBackground(_ image: NSImage) {
+        fullArtworkBackgroundView.image = image
+    }
+
+    /// Seeds the settings panel's toggle from the persisted preference —
+    /// called once at startup, since nothing else in this view ever
+    /// changes it out from under the switch itself.
+    func update(blurredBackgroundEnabled: Bool) {
+        blurredBackgroundSwitch.state = blurredBackgroundEnabled ? .on : .off
     }
 
     /// The current Track's name and artist, shown on whichever Now Playing
@@ -516,14 +571,23 @@ final class OverlayCardView: DraggableBackgroundView {
         view.setContentCompressionResistancePriority(.init(1), for: .vertical)
     }
 
-    /// Full Layout's Now Playing content: a big square artwork area, an
-    /// always-visible seek bar with elapsed/remaining time, and the
-    /// current Track's title/artist beside a persistent lyrics-toggle
-    /// button — the bottom-corner spot Spotify's own Mini Player gives its
-    /// "add to library" button. A static skeleton: no hover-revealed
-    /// transport row or top chrome bar yet (a later ticket), and no
-    /// blurred background behind the artwork yet either (later still).
+    /// Full Layout's Now Playing content: a big square artwork area (a
+    /// blurred/color-boosted, or plain, backdrop behind a smaller sharp
+    /// copy of the same artwork), an always-visible seek bar with
+    /// elapsed/remaining time, and the current Track's title/artist beside
+    /// a persistent lyrics-toggle button — the bottom-corner spot
+    /// Spotify's own Mini Player gives its "add to library" button.
     private func configureFullLayoutFace() {
+        fullArtworkBackgroundView.wantsLayer = true
+        fullArtworkBackgroundView.layer?.cornerRadius = Self.fullArtworkCornerRadius
+        fullArtworkBackgroundView.layer?.masksToBounds = true
+        fullArtworkBackgroundView.image = OverlayArtworkPlaceholder.image(pointSize: 32)
+        fullArtworkBackgroundView.contentTintColor = OverlayArtworkPlaceholder.tint
+        fullArtworkBackgroundView.imageScaling = .scaleProportionallyUpOrDown
+        fullArtworkBackgroundView.translatesAutoresizingMaskIntoConstraints = false
+        fullArtworkBackgroundView.setContentHuggingPriority(.init(1), for: .horizontal)
+        fullArtworkBackgroundView.setContentHuggingPriority(.init(1), for: .vertical)
+
         fullArtworkView.wantsLayer = true
         fullArtworkView.layer?.cornerRadius = Self.fullArtworkCornerRadius
         fullArtworkView.layer?.masksToBounds = true
@@ -584,10 +648,13 @@ final class OverlayCardView: DraggableBackgroundView {
 
         // Every dynamic-content view built above needs this — see
         // `suppressIntrinsicSizeGrowthPressure`'s own comment for why.
-        [fullArtworkView, fullTitleLabel, fullArtistLabel, fullTextStack, elapsedLabel, remainingLabel, fullSeekSlider, seekRow]
+        [fullArtworkBackgroundView, fullArtworkView, fullTitleLabel, fullArtistLabel, fullTextStack, elapsedLabel, remainingLabel, fullSeekSlider, seekRow]
             .forEach(suppressIntrinsicSizeGrowthPressure)
 
         fullFace.translatesAutoresizingMaskIntoConstraints = false
+        // Background added first, so it renders behind the sharp copy —
+        // NSView z-order follows subview array order.
+        fullFace.addSubview(fullArtworkBackgroundView)
         fullFace.addSubview(fullArtworkView)
         fullFace.addSubview(seekRow)
         fullFace.addSubview(fullTextStack)
@@ -623,10 +690,10 @@ final class OverlayCardView: DraggableBackgroundView {
         // matches whatever width the window
         // already has, never asks for more.
         fullLayoutContentConstraints = [
-            fullArtworkView.leadingAnchor.constraint(equalTo: fullFace.leadingAnchor, constant: 16),
-            fullArtworkView.trailingAnchor.constraint(equalTo: fullFace.trailingAnchor, constant: -16),
-            fullArtworkView.heightAnchor.constraint(equalTo: fullArtworkView.widthAnchor),
-            fullArtworkView.topAnchor.constraint(equalTo: fullFace.topAnchor, constant: 16),
+            fullArtworkBackgroundView.leadingAnchor.constraint(equalTo: fullFace.leadingAnchor, constant: 16),
+            fullArtworkBackgroundView.trailingAnchor.constraint(equalTo: fullFace.trailingAnchor, constant: -16),
+            fullArtworkBackgroundView.heightAnchor.constraint(equalTo: fullArtworkBackgroundView.widthAnchor),
+            fullArtworkBackgroundView.topAnchor.constraint(equalTo: fullFace.topAnchor, constant: 16),
             // A minimum gap, not a fixed position — the bottom rows below
             // are anchored from the bottom up. If the window is wide
             // enough relative to its height that the width-matched square
@@ -635,7 +702,15 @@ final class OverlayCardView: DraggableBackgroundView {
             // one) — Full Layout at very short, very wide sizes is an
             // extreme this static skeleton doesn't attempt to handle
             // gracefully yet.
-            fullArtworkView.bottomAnchor.constraint(lessThanOrEqualTo: seekRow.topAnchor, constant: -12),
+            fullArtworkBackgroundView.bottomAnchor.constraint(lessThanOrEqualTo: seekRow.topAnchor, constant: -12),
+
+            // The sharp copy: smaller, centered within the background
+            // square rather than filling it — see
+            // `fullArtworkForegroundScale`'s own comment.
+            fullArtworkView.centerXAnchor.constraint(equalTo: fullArtworkBackgroundView.centerXAnchor),
+            fullArtworkView.centerYAnchor.constraint(equalTo: fullArtworkBackgroundView.centerYAnchor),
+            fullArtworkView.widthAnchor.constraint(equalTo: fullArtworkBackgroundView.widthAnchor, multiplier: Self.fullArtworkForegroundScale),
+            fullArtworkView.heightAnchor.constraint(equalTo: fullArtworkView.widthAnchor),
 
             seekRow.leadingAnchor.constraint(equalTo: fullFace.leadingAnchor, constant: 16),
             seekRow.trailingAnchor.constraint(equalTo: fullFace.trailingAnchor, constant: -16),
@@ -645,20 +720,21 @@ final class OverlayCardView: DraggableBackgroundView {
             fullTextStack.trailingAnchor.constraint(lessThanOrEqualTo: fullLyricsButton.leadingAnchor, constant: -8),
             fullTextStack.centerYAnchor.constraint(equalTo: fullLyricsButton.centerYAnchor),
 
-            // Overlaid directly on the artwork square — both are `fullFace`
-            // subviews built together, so referencing `fullArtworkView`
-            // here is always safe: it never outlives `fullFace`'s own
-            // membership in the hierarchy, which this whole array's
-            // activate/deactivate cycle already tracks.
-            fullControlsOverlay.centerXAnchor.constraint(equalTo: fullArtworkView.centerXAnchor),
-            fullControlsOverlay.centerYAnchor.constraint(equalTo: fullArtworkView.centerYAnchor),
+            // Overlaid across the whole square — `fullArtworkBackgroundView`,
+            // not the now-smaller `fullArtworkView` copy — both are
+            // `fullFace` subviews built together, so referencing it here is
+            // always safe: it never outlives `fullFace`'s own membership in
+            // the hierarchy, which this whole array's activate/deactivate
+            // cycle already tracks.
+            fullControlsOverlay.centerXAnchor.constraint(equalTo: fullArtworkBackgroundView.centerXAnchor),
+            fullControlsOverlay.centerYAnchor.constraint(equalTo: fullArtworkBackgroundView.centerYAnchor),
 
-            // Sits just inside the artwork's own top edge, not `fullFace`'s —
+            // Sits just inside the square's own top edge, not `fullFace`'s —
             // matching Spotify Mini Player's own chrome bar, floating on
             // the art rather than above it.
-            fullTopChromeBar.leadingAnchor.constraint(equalTo: fullArtworkView.leadingAnchor, constant: 12),
-            fullTopChromeBar.trailingAnchor.constraint(equalTo: fullArtworkView.trailingAnchor, constant: -12),
-            fullTopChromeBar.topAnchor.constraint(equalTo: fullArtworkView.topAnchor, constant: 10),
+            fullTopChromeBar.leadingAnchor.constraint(equalTo: fullArtworkBackgroundView.leadingAnchor, constant: 12),
+            fullTopChromeBar.trailingAnchor.constraint(equalTo: fullArtworkBackgroundView.trailingAnchor, constant: -12),
+            fullTopChromeBar.topAnchor.constraint(equalTo: fullArtworkBackgroundView.topAnchor, constant: 10),
 
             // `fullFace`'s own pin-to-self — grouped with the rest here,
             // not activated unconditionally, since it only makes sense
@@ -772,6 +848,69 @@ final class OverlayCardView: DraggableBackgroundView {
 
             settingsButton.trailingAnchor.constraint(equalTo: fullTopChromeBar.trailingAnchor),
             settingsButton.centerYAnchor.constraint(equalTo: fullTopChromeBar.centerYAnchor),
+        ])
+    }
+
+    /// The settings panel: one clearly-labelled toggle for the blurred
+    /// background, and a Done button back. A sibling of `self`, pinned to
+    /// its full bounds exactly like `lyricsFace` — reachable regardless of
+    /// which Now Playing/Lyrics face is underneath, the same way opening
+    /// it can be reached from either.
+    private func configureSettingsFace() {
+        settingsFace.isHidden = true
+        settingsFace.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(settingsFace)
+
+        NSLayoutConstraint.activate([
+            settingsFace.leadingAnchor.constraint(equalTo: leadingAnchor),
+            settingsFace.trailingAnchor.constraint(equalTo: trailingAnchor),
+            settingsFace.topAnchor.constraint(equalTo: topAnchor),
+            settingsFace.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+
+        let titleLabel = PassthroughLabel(labelWithString: "Settings")
+        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.textColor = .white
+
+        let blurLabel = PassthroughLabel(labelWithString: "Blurred Background")
+        blurLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        blurLabel.textColor = .white.withAlphaComponent(0.85)
+
+        blurredBackgroundSwitch.target = self
+        blurredBackgroundSwitch.action = #selector(blurredBackgroundToggled)
+
+        let toggleRow = NSStackView(views: [blurLabel, blurredBackgroundSwitch])
+        toggleRow.orientation = .horizontal
+        toggleRow.spacing = 8
+
+        // A plain title has no readable color of its own against this
+        // card's dark background — `attributedTitle` sets one directly,
+        // rather than relying on `contentTintColor`, which only reliably
+        // tints template images, not title text.
+        settingsDoneButton.attributedTitle = NSAttributedString(
+            string: "Done",
+            attributes: [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 12, weight: .semibold)]
+        )
+        settingsDoneButton.isBordered = false
+        settingsDoneButton.wantsLayer = true
+        settingsDoneButton.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
+        settingsDoneButton.layer?.cornerRadius = 8
+        settingsDoneButton.target = self
+        settingsDoneButton.action = #selector(settingsDoneTapped)
+        settingsDoneButton.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView(views: [titleLabel, toggleRow, settingsDoneButton])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 16
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        settingsFace.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: settingsFace.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: settingsFace.centerYAnchor),
+            settingsDoneButton.widthAnchor.constraint(equalToConstant: 64),
+            settingsDoneButton.heightAnchor.constraint(equalToConstant: 26),
         ])
     }
 
@@ -889,8 +1028,27 @@ final class OverlayCardView: DraggableBackgroundView {
         onHideOverlay?()
     }
 
+    /// Opens the settings panel, remembering whether Lyrics or Now Playing
+    /// content was on screen so Done can return to it specifically.
     @objc private func settingsTapped() {
-        onOpenSettings?()
+        wasShowingLyricsBeforeSettings = !lyricsFace.isHidden
+        let current = wasShowingLyricsBeforeSettings ? lyricsFace : activeNowPlayingFace
+        crossfade(from: current, to: settingsFace)
+    }
+
+    /// Returns to Lyrics or Now Playing content, matching whichever was
+    /// showing before Settings was opened — `activeNowPlayingFace` is
+    /// re-read fresh here, not a value captured back at `settingsTapped()`,
+    /// so a resize that happened while Settings was open (see
+    /// `wasShowingLyricsBeforeSettings`'s own comment) can never leave this
+    /// returning to the wrong layout's face.
+    @objc private func settingsDoneTapped() {
+        let destination = wasShowingLyricsBeforeSettings ? lyricsFace : activeNowPlayingFace
+        crossfade(from: settingsFace, to: destination)
+    }
+
+    @objc private func blurredBackgroundToggled(_ sender: NSSwitch) {
+        onToggleBlurredBackground?(sender.state == .on)
     }
 
     @objc private func seekSliderChanged(_ sender: NSSlider) {

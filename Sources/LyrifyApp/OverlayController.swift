@@ -26,6 +26,13 @@ final class OverlayController {
 
     private var rotation = DiscRotation()
 
+    /// Fired after the Overlay's own hide button flips
+    /// `OverlayVisibilityPreference` — so whatever else displays that same
+    /// preference (the status item's "Show Overlay" checkbox) can re-sync
+    /// itself, since this hide path doesn't go through that checkbox's own
+    /// toggle.
+    var onVisibilityChangedByHideButton: (() -> Void)?
+
     /// The current Track's Synced Lyrics once found; nil while looking up,
     /// on a confirmed miss, or when unavailable — every one of those is "no
     /// Synced Lyrics" to `OverlayDisplay`, which answers the Idle State for
@@ -127,6 +134,18 @@ final class OverlayController {
         overlayView.onSeek = { [weak self] position in try? self?.bridge.seek(to: position) }
         overlayView.onVolumeChange = { [weak self] percent in try? self?.bridge.setVolume(to: percent) }
         overlayView.onToggleLyrics = { [weak self] in self?.toggleLyrics() }
+        overlayView.onToggleShuffle = { [weak self] in try? self?.bridge.toggleShuffle() }
+        overlayView.onToggleRepeat = { [weak self] in try? self?.bridge.toggleRepeat() }
+        // Same visibility mechanism the menu bar's "Show Overlay" toggle
+        // uses — not a parallel one.
+        overlayView.onHideOverlay = { [weak self] in
+            guard let self else { return }
+            self.visibilityPreference.isVisible = false
+            self.refreshVisibility()
+            self.onVisibilityChangedByHideButton?()
+        }
+        // `onOpenSettings` is left unset: the settings panel itself is a
+        // later ticket (#37), this one only makes the icon reachable.
 
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,

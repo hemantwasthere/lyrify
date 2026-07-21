@@ -33,12 +33,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         self.overlay = overlay
 
-        menuBar = MenuBarController(
+        let menuBar = MenuBarController(
             anchorSource: anchorSource,
             lyricsProvider: lyricsProvider,
             overlayVisibility: overlayVisibility,
             onVisibilityChange: { overlay.refreshVisibility() }
         )
+        self.menuBar = menuBar
+
+        overlay.onVisibilityChangedByHideButton = { [weak menuBar] in
+            menuBar?.refreshOverlayVisibilityMenuState()
+        }
 
         // Registered before anchoring starts, so it doesn't miss the seed poll.
         anchorSource.start()

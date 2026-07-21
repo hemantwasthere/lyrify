@@ -69,6 +69,12 @@ final class SpotifyBridge: PlaybackSource {
     private static let skipToPreviousSource = #"tell application "Spotify" to previous track"#
     private lazy var skipToPreviousScript = NSAppleScript(source: Self.skipToPreviousSource)
 
+    private static let toggleShuffleSource = #"tell application "Spotify" to set shuffling to not shuffling"#
+    private lazy var toggleShuffleScript = NSAppleScript(source: Self.toggleShuffleSource)
+
+    private static let toggleRepeatSource = #"tell application "Spotify" to set repeating to not repeating"#
+    private lazy var toggleRepeatScript = NSAppleScript(source: Self.toggleRepeatSource)
+
     /// Set once permission is refused, so we stop re-triggering a prompt the
     /// user has already dismissed. Ticket 10 turns this into a visible state.
     private(set) var isAutomationPermitted = true
@@ -133,6 +139,16 @@ final class SpotifyBridge: PlaybackSource {
     func skipToPrevious() throws {
         guard isSpotifyRunning else { return }
         _ = try run(skipToPreviousScript)
+    }
+
+    func toggleShuffle() throws {
+        guard isSpotifyRunning else { return }
+        _ = try run(toggleShuffleScript)
+    }
+
+    func toggleRepeat() throws {
+        guard isSpotifyRunning else { return }
+        _ = try run(toggleRepeatScript)
     }
 
     /// Seeks to `position`, in seconds — the same unit `currentState()`

@@ -103,6 +103,13 @@ final class MenuBarController {
         statusItem.menu = menu
     }
 
+    /// Re-syncs the "Show Overlay" checkbox with `OverlayVisibilityPreference`
+    /// — for whenever the Overlay's own hide button changed it, so the menu
+    /// item never shows stale state.
+    func refreshOverlayVisibilityMenuState() {
+        overlayVisibilityMenuController?.refreshState()
+    }
+
     /// Estimated position changes on every query, so deduplicate on the title
     /// — the part of the state this surface actually shows.
     private func render(_ state: PlaybackState) {

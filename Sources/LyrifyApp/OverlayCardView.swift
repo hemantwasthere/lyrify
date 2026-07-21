@@ -14,10 +14,12 @@ import QuartzCore
 /// `defaultSize` remains only as the starting size before any resize is
 /// remembered. Compact Layout's previous / play-pause / next / lyrics /
 /// seek / volume controls are revealed on hover and faded back out the
-/// moment the mouse leaves; Full Layout has no hover-revealed controls yet
-/// — its own transport row and top chrome bar are a later ticket, so today
-/// it's a static skeleton beyond its always-visible seek bar and lyrics
-/// button. Clicking any non-interactive area (inherited from
+/// moment the mouse leaves; Full Layout reveals its own transport row
+/// (shuffle, previous, play/pause, next, repeat) overlaid on the artwork,
+/// and a top chrome bar (hide, drag-handle indicator, settings) above it,
+/// on that same hover — the settings icon has nothing behind it yet beyond
+/// reachability, and the blurred artwork background is still a later
+/// ticket. Clicking any non-interactive area (inherited from
 /// `DraggableBackgroundView`) only ever starts a drag — there is no more
 /// expand/collapse gesture, since there's nothing left to expand into.
 ///
@@ -67,12 +69,23 @@ final class OverlayCardView: DraggableBackgroundView {
 
     private static let crossfadeDuration: TimeInterval = 0.2
 
+    /// The top chrome bar's hide (red dot) button diameter.
+    private static let chromeDotSize: CGFloat = 10
+
+    /// The top chrome bar's own height — just tall enough to hold the red
+    /// dot, drag-handle indicator, and settings icon comfortably.
+    private static let chromeBarHeight: CGFloat = 20
+
     var onTogglePlayPause: (() -> Void)?
     var onSkipToNext: (() -> Void)?
     var onSkipToPrevious: (() -> Void)?
     var onSeek: ((TimeInterval) -> Void)?
     var onVolumeChange: ((Int) -> Void)?
     var onToggleLyrics: (() -> Void)?
+    var onToggleShuffle: (() -> Void)?
+    var onToggleRepeat: (() -> Void)?
+    var onHideOverlay: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
 
     private let compactFace = NSView()
     private let discImageView = PassthroughImageView()
@@ -87,6 +100,17 @@ final class OverlayCardView: DraggableBackgroundView {
     private let fullSeekSlider = NSSlider()
     private let elapsedLabel = PassthroughLabel(labelWithString: "0:00")
     private let remainingLabel = PassthroughLabel(labelWithString: "0:00")
+
+    /// Full Layout's hover-revealed transport row (shuffle, previous,
+    /// play/pause, next, repeat), overlaid on the artwork.
+    private let fullControlsOverlay = NSView()
+    private let fullPlayPauseButton = NSButton()
+
+    /// Full Layout's hover-revealed top chrome bar: the hide (red dot),
+    /// drag-handle indicator, and settings icon.
+    private let fullTopChromeBar = NSView()
+    private let hideButton = NSButton()
+    private let settingsButton = NSButton()
 
     private let lyricsFace = LyricsCardView()
     private let controlsOverlay = NSView()
@@ -191,17 +215,24 @@ final class OverlayCardView: DraggableBackgroundView {
         trackingArea = area
     }
 
-    /// Only Compact Layout hover-reveals its controls — Full Layout's own
-    /// transport row and top chrome bar (with their own hover behavior)
-    /// are a later ticket's job.
+    /// Compact Layout reveals its own controls overlay; Full Layout reveals
+    /// its transport row and top chrome bar together, on the same hover.
     override func mouseEntered(with event: NSEvent) {
-        guard !isFullLayout else { return }
-        controlsOverlay.animator().alphaValue = 1
+        if isFullLayout {
+            fullControlsOverlay.animator().alphaValue = 1
+            fullTopChromeBar.animator().alphaValue = 1
+        } else {
+            controlsOverlay.animator().alphaValue = 1
+        }
     }
 
     override func mouseExited(with event: NSEvent) {
-        guard !isFullLayout else { return }
-        controlsOverlay.animator().alphaValue = 0
+        if isFullLayout {
+            fullControlsOverlay.animator().alphaValue = 0
+            fullTopChromeBar.animator().alphaValue = 0
+        } else {
+            controlsOverlay.animator().alphaValue = 0
+        }
     }
 
     /// Switches between Compact and Full Layout's Now Playing content as
@@ -237,11 +268,13 @@ final class OverlayCardView: DraggableBackgroundView {
             fullFace.removeFromSuperview()
         }
 
-        // No hover-revealed controls of its own yet in Full Layout — reset
-        // immediately (not animated) rather than leaving a stale reveal
-        // from before a resize crossed the threshold mid-hover.
+        // Reset both layouts' hover-revealed chrome immediately (not
+        // animated) rather than leaving a stale reveal from before a resize
+        // crossed the threshold mid-hover.
         controlsOverlay.isHidden = isFullLayout
         controlsOverlay.alphaValue = 0
+        fullControlsOverlay.alphaValue = 0
+        fullTopChromeBar.alphaValue = 0
 
         // Reachable regardless of which face is currently showing — set
         // here, not inside the guard below, so it doesn't go dark the
@@ -308,7 +341,9 @@ final class OverlayCardView: DraggableBackgroundView {
 
     func update(isPlaying: Bool) {
         let symbolName = isPlaying ? "pause.fill" : "play.fill"
-        playPauseButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Play/Pause")
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Play/Pause")
+        playPauseButton.image = image
+        fullPlayPauseButton.image = image
     }
 
     /// Whichever Now Playing content is current — Compact or Full
@@ -556,6 +591,8 @@ final class OverlayCardView: DraggableBackgroundView {
         fullFace.addSubview(fullArtworkView)
         fullFace.addSubview(seekRow)
         fullFace.addSubview(fullTextStack)
+        configureFullControlsOverlay()
+        configureFullTopChromeBar()
         // Not added as a subview of `self` here — see
         // `fullLayoutContentConstraints`'s own comment: `update(layout:)`
         // adds it only while Full Layout is actually current.
@@ -608,6 +645,21 @@ final class OverlayCardView: DraggableBackgroundView {
             fullTextStack.trailingAnchor.constraint(lessThanOrEqualTo: fullLyricsButton.leadingAnchor, constant: -8),
             fullTextStack.centerYAnchor.constraint(equalTo: fullLyricsButton.centerYAnchor),
 
+            // Overlaid directly on the artwork square — both are `fullFace`
+            // subviews built together, so referencing `fullArtworkView`
+            // here is always safe: it never outlives `fullFace`'s own
+            // membership in the hierarchy, which this whole array's
+            // activate/deactivate cycle already tracks.
+            fullControlsOverlay.centerXAnchor.constraint(equalTo: fullArtworkView.centerXAnchor),
+            fullControlsOverlay.centerYAnchor.constraint(equalTo: fullArtworkView.centerYAnchor),
+
+            // Sits just inside the artwork's own top edge, not `fullFace`'s —
+            // matching Spotify Mini Player's own chrome bar, floating on
+            // the art rather than above it.
+            fullTopChromeBar.leadingAnchor.constraint(equalTo: fullArtworkView.leadingAnchor, constant: 12),
+            fullTopChromeBar.trailingAnchor.constraint(equalTo: fullArtworkView.trailingAnchor, constant: -12),
+            fullTopChromeBar.topAnchor.constraint(equalTo: fullArtworkView.topAnchor, constant: 10),
+
             // `fullFace`'s own pin-to-self — grouped with the rest here,
             // not activated unconditionally, since it only makes sense
             // once `fullFace` has actually been added as a subview of
@@ -629,6 +681,97 @@ final class OverlayCardView: DraggableBackgroundView {
         NSLayoutConstraint.activate([
             fullLyricsButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             fullLyricsButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14),
+        ])
+    }
+
+    /// Full Layout's transport row — shuffle, previous, play/pause, next,
+    /// repeat — overlaid on the artwork and faded in/out on hover
+    /// (`mouseEntered`/`mouseExited`), alongside `fullTopChromeBar`. A
+    /// `fullFace` subview, not a sibling of `self` the way `controlsOverlay`
+    /// and `fullLyricsButton` are: it has no need to survive into the
+    /// Lyrics face the way the lyrics-toggle button itself does, so it can
+    /// simply ride `fullFace`'s own add/remove cycle.
+    private func configureFullControlsOverlay() {
+        fullControlsOverlay.translatesAutoresizingMaskIntoConstraints = false
+        fullControlsOverlay.alphaValue = 0
+        fullFace.addSubview(fullControlsOverlay)
+
+        let shuffleButton = transportButton(symbolName: "shuffle", action: #selector(shuffleTapped))
+        let previousButton = transportButton(symbolName: "backward.fill", action: #selector(previousTapped))
+
+        fullPlayPauseButton.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: "Play/Pause")
+        styleTransportButton(fullPlayPauseButton)
+        fullPlayPauseButton.target = self
+        fullPlayPauseButton.action = #selector(playPauseTapped)
+
+        let nextButton = transportButton(symbolName: "forward.fill", action: #selector(nextTapped))
+        let repeatButton = transportButton(symbolName: "repeat", action: #selector(repeatTapped))
+
+        let row = NSStackView(views: [shuffleButton, previousButton, fullPlayPauseButton, nextButton, repeatButton])
+        row.orientation = .horizontal
+        row.spacing = 20
+        row.translatesAutoresizingMaskIntoConstraints = false
+        fullControlsOverlay.addSubview(row)
+
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: fullControlsOverlay.leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: fullControlsOverlay.trailingAnchor),
+            row.topAnchor.constraint(equalTo: fullControlsOverlay.topAnchor),
+            row.bottomAnchor.constraint(equalTo: fullControlsOverlay.bottomAnchor),
+        ])
+    }
+
+    /// Full Layout's top chrome bar — the hide (red dot) button, a
+    /// decorative drag-handle indicator, and the settings icon — faded
+    /// in/out on the same hover as `fullControlsOverlay`. The drag-handle
+    /// indicator is a `PassthroughImageView`, not a plain button: it's
+    /// decorative only, so a click on it must fall through to
+    /// `DraggableBackgroundView` and start a drag exactly as it would
+    /// anywhere else non-interactive on the card, rather than swallowing
+    /// the event itself.
+    private func configureFullTopChromeBar() {
+        fullTopChromeBar.translatesAutoresizingMaskIntoConstraints = false
+        fullTopChromeBar.alphaValue = 0
+        fullFace.addSubview(fullTopChromeBar)
+
+        hideButton.wantsLayer = true
+        hideButton.isBordered = false
+        hideButton.title = ""
+        hideButton.layer?.backgroundColor = NSColor.systemRed.cgColor
+        hideButton.layer?.cornerRadius = Self.chromeDotSize / 2
+        hideButton.target = self
+        hideButton.action = #selector(hideTapped)
+        hideButton.translatesAutoresizingMaskIntoConstraints = false
+
+        let dragHandle = PassthroughImageView()
+        dragHandle.image = NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: nil)
+        dragHandle.contentTintColor = .white.withAlphaComponent(0.4)
+        dragHandle.translatesAutoresizingMaskIntoConstraints = false
+
+        settingsButton.image = NSImage(systemSymbolName: "gearshape.fill", accessibilityDescription: "Settings")
+        styleTransportButton(settingsButton)
+        settingsButton.contentTintColor = .white.withAlphaComponent(0.7)
+        settingsButton.target = self
+        settingsButton.action = #selector(settingsTapped)
+        settingsButton.translatesAutoresizingMaskIntoConstraints = false
+
+        fullTopChromeBar.addSubview(hideButton)
+        fullTopChromeBar.addSubview(dragHandle)
+        fullTopChromeBar.addSubview(settingsButton)
+
+        NSLayoutConstraint.activate([
+            fullTopChromeBar.heightAnchor.constraint(equalToConstant: Self.chromeBarHeight),
+
+            hideButton.widthAnchor.constraint(equalToConstant: Self.chromeDotSize),
+            hideButton.heightAnchor.constraint(equalToConstant: Self.chromeDotSize),
+            hideButton.leadingAnchor.constraint(equalTo: fullTopChromeBar.leadingAnchor),
+            hideButton.centerYAnchor.constraint(equalTo: fullTopChromeBar.centerYAnchor),
+
+            dragHandle.centerXAnchor.constraint(equalTo: fullTopChromeBar.centerXAnchor),
+            dragHandle.centerYAnchor.constraint(equalTo: fullTopChromeBar.centerYAnchor),
+
+            settingsButton.trailingAnchor.constraint(equalTo: fullTopChromeBar.trailingAnchor),
+            settingsButton.centerYAnchor.constraint(equalTo: fullTopChromeBar.centerYAnchor),
         ])
     }
 
@@ -732,6 +875,22 @@ final class OverlayCardView: DraggableBackgroundView {
 
     @objc private func lyricsTapped() {
         onToggleLyrics?()
+    }
+
+    @objc private func shuffleTapped() {
+        onToggleShuffle?()
+    }
+
+    @objc private func repeatTapped() {
+        onToggleRepeat?()
+    }
+
+    @objc private func hideTapped() {
+        onHideOverlay?()
+    }
+
+    @objc private func settingsTapped() {
+        onOpenSettings?()
     }
 
     @objc private func seekSliderChanged(_ sender: NSSlider) {

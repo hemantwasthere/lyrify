@@ -64,12 +64,15 @@ final class OverlayController {
     /// listener can resize the Overlay down to.
     private static let minimumSize = OverlayCardView.defaultSize
 
-    /// However wide the listener drags the Overlay, resizing stops here —
-    /// generous headroom for Compact Layout at a glance. Height stops just
-    /// short of `OverlayLayout.thresholdHeight`, so resizing can never
-    /// reach Full Layout's territory before it actually exists to render
-    /// (a later ticket raises this once it does).
-    private static let maximumSize = NSSize(width: 480, height: OverlayLayout.thresholdHeight - 1)
+    /// However large the listener drags the Overlay, resizing stops
+    /// here. Width is deliberately more modest than an earlier draft of
+    /// this bound (480) — Full Layout's square artwork area grows with
+    /// the Overlay's width, so a wider ceiling here also raises how tall
+    /// Full Layout's structural minimum can get at that width, and
+    /// `OverlayLayout.thresholdHeight` has to clear that at every width
+    /// this ceiling allows (see its own comment). Raising this width
+    /// means raising that threshold correspondingly, not independently.
+    private static let maximumSize = NSSize(width: 320, height: 550)
 
     // nonisolated(unsafe) so deinit may remove it; safe because it's written
     // once in init and never mutated again. Same rationale as

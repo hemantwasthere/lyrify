@@ -2,26 +2,31 @@ import AppKit
 import LyrifyCore
 import QuartzCore
 
-/// The Overlay's one and only window content — the Now Playing face (a
-/// small spinning Disc of album art alongside the current Track's title
-/// and artist) or the Lyrics face (`LyricsCardView`) — toggled by the
-/// lyrics button and crossfaded between. As the Overlay's window is now
+/// The Overlay's one and only window content — the Now Playing face, shown
+/// as Compact Layout (a small square thumbnail beside the current Track's
+/// title and artist) or Full Layout (a big square artwork area, an
+/// always-visible seek bar, and title/artist pinned at the bottom) as
+/// `OverlayLayout` resolves for the Overlay's current size — or the Lyrics
+/// face (`LyricsCardView`), toggled by whichever layout's own lyrics
+/// button and crossfaded between. As the Overlay's window is now
 /// user-resizable (`OverlayWindow`), this view is sized directly by that
 /// window rather than pinning its own fixed size the way it used to;
 /// `defaultSize` remains only as the starting size before any resize is
-/// remembered. Rendering only ever shows Compact Layout for now, at
-/// whatever size the window resolves to — `OverlayLayout`'s Full Layout
-/// case lands in a later ticket. Previous / play-pause / next / lyrics /
-/// seek / volume controls are revealed on hover over either face and
-/// faded back out the moment the mouse leaves. Clicking any
-/// non-interactive area (inherited from `DraggableBackgroundView`) only
-/// ever starts a drag — there is no more expand/collapse gesture, since
-/// there's nothing left to expand into.
+/// remembered. Compact Layout's previous / play-pause / next / lyrics /
+/// seek / volume controls are revealed on hover and faded back out the
+/// moment the mouse leaves; Full Layout has no hover-revealed controls yet
+/// — its own transport row and top chrome bar are a later ticket, so today
+/// it's a static skeleton beyond its always-visible seek bar and lyrics
+/// button. Clicking any non-interactive area (inherited from
+/// `DraggableBackgroundView`) only ever starts a drag — there is no more
+/// expand/collapse gesture, since there's nothing left to expand into.
 ///
 /// Seek and volume only commit on mouse-up, not on every intermediate
 /// value — dragging either shouldn't fire a live AppleScript command for
 /// every pixel crossed. Both ignore external updates while the listener is
 /// actively dragging them, so a redraw never fights the gesture in progress.
+/// Compact and Full Layout's seek sliders share this same commit-on-release
+/// state, since only one is ever on screen at a time.
 ///
 /// Deliberately untested — AppKit event handling and layout verified by
 /// hand.
@@ -30,6 +35,20 @@ final class OverlayCardView: DraggableBackgroundView {
     /// also `OverlayWindow`'s minimum resizable size, since it's the
     /// smallest proven-usable Compact Layout.
     static let defaultSize = NSSize(width: 220, height: 96)
+
+    /// A genuine, constant ceiling on how wide Compact Layout's title/
+    /// artist row is ever allowed to demand — matches
+    /// `OverlayController.maximumSize.width`, the Overlay's own resize
+    /// ceiling, since a title any wider than that could never actually be
+    /// shown in full regardless. Without an *independent* cap like this
+    /// one, a long real Track title has nothing standing between it and
+    /// the window itself: this view's own width comes from the window
+    /// (deliberately, so the window can drive it rather than the reverse
+    /// — see the class doc comment), so a cap relative to *this view's
+    /// own* width is circular and resolves by growing the window to fit
+    /// the untruncated title instead of truncating it. A cap against a
+    /// plain constant breaks that circularity outright.
+    private static let maximumRowWidth: CGFloat = 320 - 28
 
     /// Compact Layout's thumbnail is a small square, not the circular Disc
     /// the pre-resizable widget used — matching Spotify's own Mini Player,
@@ -42,6 +61,10 @@ final class OverlayCardView: DraggableBackgroundView {
     /// visual treatment is a later ticket's concern.
     private static let cornerRadius: CGFloat = 24
 
+    /// A gentler rounding than the card's own — a big square tile reads as
+    /// a tile, not a pill, at this size.
+    private static let fullArtworkCornerRadius: CGFloat = 12
+
     private static let crossfadeDuration: TimeInterval = 0.2
 
     var onTogglePlayPause: (() -> Void)?
@@ -51,10 +74,20 @@ final class OverlayCardView: DraggableBackgroundView {
     var onVolumeChange: ((Int) -> Void)?
     var onToggleLyrics: (() -> Void)?
 
-    private let nowPlayingFace = NSView()
+    private let compactFace = NSView()
     private let discImageView = PassthroughImageView()
     private let titleLabel = PassthroughLabel(labelWithString: "")
     private let artistLabel = PassthroughLabel(labelWithString: "")
+
+    private let fullFace = NSView()
+    private let fullArtworkView = PassthroughImageView()
+    private let fullTitleLabel = PassthroughLabel(labelWithString: "")
+    private let fullArtistLabel = PassthroughLabel(labelWithString: "")
+    private let fullLyricsButton = NSButton()
+    private let fullSeekSlider = NSSlider()
+    private let elapsedLabel = PassthroughLabel(labelWithString: "0:00")
+    private let remainingLabel = PassthroughLabel(labelWithString: "0:00")
+
     private let lyricsFace = LyricsCardView()
     private let controlsOverlay = NSView()
     private let seekSlider = NSSlider()
@@ -65,6 +98,30 @@ final class OverlayCardView: DraggableBackgroundView {
     private var isDraggingSeek = false
     private var isDraggingVolume = false
     private var trackingArea: NSTrackingArea?
+
+    /// Whether the current `OverlayLayout` is Full rather than Compact —
+    /// tracked independently of either face's `isHidden`, since both go
+    /// hidden together while the Lyrics face is showing and `isHidden`
+    /// alone couldn't say which one to reveal when it isn't anymore.
+    private var isFullLayout = false
+
+    /// Whether `update(layout:)` has run at least once — its very first
+    /// call must always apply (matching the constructor's own Compact
+    /// defaults isn't guaranteed if the initial resolved layout is
+    /// actually Full), every call after that only on an actual
+    /// Compact/Full transition.
+    private var didResolveInitialLayout = false
+
+    /// The current Track's duration, needed alongside the live seek
+    /// position to compute Full Layout's remaining-time label.
+    private var trackDuration: TimeInterval = 1
+
+    /// Full Layout's own internal content constraints — built once in
+    /// `configureFullLayoutFace`, but only active while Full Layout is
+    /// actually current. See that method's own comment for why: left
+    /// active all the time, they'd pressure the window to grow to Full
+    /// Layout's minimum size even while `fullFace` is hidden.
+    private var fullLayoutContentConstraints: [NSLayoutConstraint] = []
 
     init() {
         super.init(frame: NSRect(origin: .zero, size: Self.defaultSize))
@@ -79,9 +136,17 @@ final class OverlayCardView: DraggableBackgroundView {
         // No fixed width/height constraint of its own: as the Overlay's
         // window content view, its frame is set directly by the (now
         // resizable) window, not derived from its subviews' own demands.
+        // `suppressIntrinsicSizeGrowthPressure` and `maximumRowWidth`
+        // exist because that's not quite the whole story — see their own
+        // comments.
         translatesAutoresizingMaskIntoConstraints = false
 
-        configureNowPlayingFace()
+        configureCompactFace()
+        configureFullLayoutFace()
+        // `fullFace` isn't added to the hierarchy here at all — see
+        // `configureFullLayoutFace`'s own comment on why; `update(layout:)`
+        // (always called at least once, right after this view is built)
+        // adds it only once Full Layout is actually current.
 
         lyricsFace.isHidden = true
         lyricsFace.translatesAutoresizingMaskIntoConstraints = false
@@ -93,6 +158,13 @@ final class OverlayCardView: DraggableBackgroundView {
             lyricsFace.topAnchor.constraint(equalTo: topAnchor),
             lyricsFace.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+
+        // Added after `lyricsFace`, so it renders above both — it must
+        // stay reachable regardless of which Now Playing/Lyrics face is
+        // currently showing. Hidden by default: only visible while Full
+        // Layout is current, toggled in `update(layout:)`.
+        addSubview(fullLyricsButton)
+        fullLyricsButton.isHidden = true
 
         configureControlsOverlay()
     }
@@ -119,27 +191,74 @@ final class OverlayCardView: DraggableBackgroundView {
         trackingArea = area
     }
 
+    /// Only Compact Layout hover-reveals its controls — Full Layout's own
+    /// transport row and top chrome bar (with their own hover behavior)
+    /// are a later ticket's job.
     override func mouseEntered(with event: NSEvent) {
+        guard !isFullLayout else { return }
         controlsOverlay.animator().alphaValue = 1
     }
 
     override func mouseExited(with event: NSEvent) {
+        guard !isFullLayout else { return }
         controlsOverlay.animator().alphaValue = 0
     }
 
-    /// Renders whatever `OverlayLayout` resolves for the Overlay's current
-    /// size. Only Compact Layout is implemented today; Full Layout
-    /// rendering is a later ticket's job. `OverlayController`'s resize
-    /// bounds keep every currently reachable size resolving to `.compact`,
-    /// so this only ever asserts that invariant rather than actually
-    /// branching — the assertion is what should fail loudly the moment
-    /// that stops being true, rather than silently rendering the wrong
-    /// thing.
+    /// Switches between Compact and Full Layout's Now Playing content as
+    /// `OverlayLayout` resolves differently for the Overlay's current
+    /// size. Ignores which `LyricsScale` a `.full` case carries — that's
+    /// Full Layout's Lyrics Face scaling, a later ticket's concern, not
+    /// which face this method shows.
     func update(layout: OverlayLayout) {
-        guard case .compact = layout else {
-            assertionFailure("Full Layout isn't rendered yet — OverlayController's maxSize should keep this unreachable")
+        let wasFullLayout = isFullLayout
+        switch layout {
+        case .compact: isFullLayout = false
+        case .full: isFullLayout = true
+        }
+
+        // `sizeChanged()` calls this on every tick of a live resize drag,
+        // not just when it crosses the Compact/Full boundary — skip the
+        // work below unless the boundary was actually crossed (or this is
+        // the first call), so a redundant activate/deactivate cycle on
+        // every tick can't itself perturb layout.
+        guard isFullLayout != wasFullLayout || !didResolveInitialLayout else { return }
+        didResolveInitialLayout = true
+
+        // `fullFace` is added to (and removed from) the hierarchy here,
+        // not just hidden — see `fullLayoutContentConstraints`'s own doc
+        // comment for why merely hiding it isn't enough. A view outside
+        // the hierarchy entirely can't influence anything's sizing,
+        // regardless of its own content's intrinsic size.
+        if isFullLayout {
+            addSubview(fullFace)
+            NSLayoutConstraint.activate(fullLayoutContentConstraints)
+        } else {
+            NSLayoutConstraint.deactivate(fullLayoutContentConstraints)
+            fullFace.removeFromSuperview()
+        }
+
+        // No hover-revealed controls of its own yet in Full Layout — reset
+        // immediately (not animated) rather than leaving a stale reveal
+        // from before a resize crossed the threshold mid-hover.
+        controlsOverlay.isHidden = isFullLayout
+        controlsOverlay.alphaValue = 0
+
+        // Reachable regardless of which face is currently showing — set
+        // here, not inside the guard below, so it doesn't go dark the
+        // moment the Lyrics face is showing.
+        fullLyricsButton.isHidden = !isFullLayout
+
+        guard lyricsFace.isHidden else {
+            // The Lyrics face is showing — nothing to reveal until
+            // `showNowPlaying()` is called; `isFullLayout` alone remembers
+            // which Now Playing content that'll be.
+            compactFace.isHidden = true
+            fullFace.isHidden = true
             return
         }
+
+        compactFace.isHidden = isFullLayout
+        fullFace.isHidden = !isFullLayout
     }
 
     /// Rotates the Disc's artwork to `degrees` — `DiscRotation`'s current
@@ -153,10 +272,15 @@ final class OverlayCardView: DraggableBackgroundView {
         discImageView.layer?.transform = CATransform3DMakeRotation(radians, 0, 0, 1)
     }
 
-    /// Shows real album art. No tint — the art speaks for itself.
+    /// Shows real album art on both Compact and Full Layout — no tint, the
+    /// art speaks for itself. Full Layout's own copy is a plain, un-rotated
+    /// display of the same image; the blurred, color-extracted background
+    /// behind it is a later ticket.
     func updateArtwork(_ image: NSImage) {
         discImageView.contentTintColor = nil
         discImageView.image = image
+        fullArtworkView.contentTintColor = nil
+        fullArtworkView.image = image
     }
 
     /// Back to the placeholder — no artwork or track name known yet, or a
@@ -165,14 +289,21 @@ final class OverlayCardView: DraggableBackgroundView {
     func updatePlaceholder() {
         discImageView.contentTintColor = OverlayArtworkPlaceholder.tint
         discImageView.image = OverlayArtworkPlaceholder.image(pointSize: 16)
+        fullArtworkView.contentTintColor = OverlayArtworkPlaceholder.tint
+        fullArtworkView.image = OverlayArtworkPlaceholder.image(pointSize: 32)
         titleLabel.stringValue = LyricsCardView.nothingPlayingText
         artistLabel.stringValue = ""
+        fullTitleLabel.stringValue = LyricsCardView.nothingPlayingText
+        fullArtistLabel.stringValue = ""
     }
 
-    /// The current Track's name and artist, shown on the Now Playing face.
+    /// The current Track's name and artist, shown on whichever Now Playing
+    /// content (Compact or Full Layout) is current.
     func updateTrackInfo(name: String, artist: String) {
         titleLabel.stringValue = name
         artistLabel.stringValue = artist
+        fullTitleLabel.stringValue = name
+        fullArtistLabel.stringValue = artist
     }
 
     func update(isPlaying: Bool) {
@@ -180,18 +311,26 @@ final class OverlayCardView: DraggableBackgroundView {
         playPauseButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Play/Pause")
     }
 
-    /// Crossfades to the Lyrics face. The controls overlay above it is
-    /// unaffected — hovering still reveals the same transport, seek, and
-    /// volume controls, so playback stays reachable while reading along.
+    /// Whichever Now Playing content is current — Compact or Full
+    /// Layout's — the one `update(layout:)` last selected.
+    private var activeNowPlayingFace: NSView { isFullLayout ? fullFace : compactFace }
+
+    /// Crossfades to the Lyrics face, from whichever Now Playing content is
+    /// current. Compact Layout's controls overlay is unaffected — hovering
+    /// still reveals the same transport, seek, and volume controls, so
+    /// playback stays reachable while reading along; Full Layout has no
+    /// hover controls of its own yet to worry about.
     func showLyrics() {
-        crossfade(from: nowPlayingFace, to: lyricsFace)
+        crossfade(from: activeNowPlayingFace, to: lyricsFace)
         lyricsButton.contentTintColor = .white
+        fullLyricsButton.contentTintColor = .white
     }
 
-    /// Crossfades back to the Now Playing face.
+    /// Crossfades back to whichever Now Playing content is current.
     func showNowPlaying() {
-        crossfade(from: lyricsFace, to: nowPlayingFace)
+        crossfade(from: lyricsFace, to: activeNowPlayingFace)
         lyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
+        fullLyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
     }
 
     /// What the Lyrics face shows — forwarded straight to `LyricsCardView`,
@@ -201,19 +340,27 @@ final class OverlayCardView: DraggableBackgroundView {
         lyricsFace.update(with: content)
     }
 
-    /// Sets the seek slider's range to the current Track's duration. Called
-    /// once per Track, not on every Anchor.
+    /// Sets both seek sliders' range to the current Track's duration.
+    /// Called once per Track, not on every Anchor.
     func configureSeek(duration: TimeInterval) {
+        trackDuration = max(duration, 1)
         seekSlider.minValue = 0
-        seekSlider.maxValue = max(duration, 1)
+        seekSlider.maxValue = trackDuration
+        fullSeekSlider.minValue = 0
+        fullSeekSlider.maxValue = trackDuration
     }
 
-    /// Moves the seek slider's thumb to `position` — ignored while the
-    /// listener is actively dragging it, so a redraw never yanks the thumb
-    /// out from under their cursor.
+    /// Moves both seek sliders' thumbs to `position`, and Full Layout's
+    /// elapsed/remaining labels alongside them — ignored while the
+    /// listener is actively dragging either slider (only one is ever on
+    /// screen at a time, sharing this same drag state), so a redraw never
+    /// yanks the thumb out from under their cursor.
     func updateSeek(position: TimeInterval) {
         guard !isDraggingSeek else { return }
         seekSlider.doubleValue = position
+        fullSeekSlider.doubleValue = position
+        elapsedLabel.stringValue = PlaybackTimeFormat.string(forSeconds: position)
+        remainingLabel.stringValue = "-" + PlaybackTimeFormat.string(forSeconds: trackDuration - position)
     }
 
     /// Sets the volume slider's thumb to Spotify's actual current volume —
@@ -247,7 +394,7 @@ final class OverlayCardView: DraggableBackgroundView {
         }
     }
 
-    private func configureNowPlayingFace() {
+    private func configureCompactFace() {
         discImageView.wantsLayer = true
         discImageView.layer?.cornerRadius = Self.discCornerRadius
         discImageView.layer?.masksToBounds = true
@@ -281,22 +428,207 @@ final class OverlayCardView: DraggableBackgroundView {
         row.spacing = 10
         row.translatesAutoresizingMaskIntoConstraints = false
 
-        nowPlayingFace.translatesAutoresizingMaskIntoConstraints = false
-        nowPlayingFace.addSubview(row)
-        addSubview(nowPlayingFace)
+        // Without this, a long real Track title's default (high)
+        // compression resistance refuses to shrink below its own full
+        // width, so `.byTruncatingTail` above never actually engages —
+        // see `suppressIntrinsicSizeGrowthPressure`'s own comment.
+        [titleLabel, artistLabel, textStack, row].forEach(suppressIntrinsicSizeGrowthPressure)
+
+        compactFace.translatesAutoresizingMaskIntoConstraints = false
+        compactFace.addSubview(row)
+        addSubview(compactFace)
 
         NSLayoutConstraint.activate([
             discImageView.widthAnchor.constraint(equalToConstant: Self.discSize),
             discImageView.heightAnchor.constraint(equalToConstant: Self.discSize),
 
-            row.leadingAnchor.constraint(equalTo: nowPlayingFace.leadingAnchor, constant: 16),
-            row.trailingAnchor.constraint(lessThanOrEqualTo: nowPlayingFace.trailingAnchor, constant: -12),
-            row.centerYAnchor.constraint(equalTo: nowPlayingFace.centerYAnchor),
+            row.leadingAnchor.constraint(equalTo: compactFace.leadingAnchor, constant: 16),
+            row.trailingAnchor.constraint(lessThanOrEqualTo: compactFace.trailingAnchor, constant: -12),
+            // See `maximumRowWidth`'s own comment: a real, non-circular
+            // ceiling, independent of this view's own (window-derived)
+            // width, is what actually makes a long title truncate instead
+            // of growing the window to fit it.
+            row.widthAnchor.constraint(lessThanOrEqualToConstant: Self.maximumRowWidth),
+            row.centerYAnchor.constraint(equalTo: compactFace.centerYAnchor),
 
-            nowPlayingFace.leadingAnchor.constraint(equalTo: leadingAnchor),
-            nowPlayingFace.trailingAnchor.constraint(equalTo: trailingAnchor),
-            nowPlayingFace.topAnchor.constraint(equalTo: topAnchor),
-            nowPlayingFace.bottomAnchor.constraint(equalTo: bottomAnchor),
+            compactFace.leadingAnchor.constraint(equalTo: leadingAnchor),
+            compactFace.trailingAnchor.constraint(equalTo: trailingAnchor),
+            compactFace.topAnchor.constraint(equalTo: topAnchor),
+            compactFace.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    /// Lowers `view`'s content compression resistance to the point of
+    /// having none, on both axes. Every view whose real content (a
+    /// fetched artwork image, a Track's actual title or artist) can be far
+    /// bigger than the small, often-truncated size it's meant to render at
+    /// needs this: content compression resistance defaults *high*, which
+    /// otherwise insists on staying at least as large as that real
+    /// content — for a label, that means truncation (`.byTruncatingTail`)
+    /// never actually engages; for a view whose position constraints are
+    /// conditionally inactive (Full Layout's own content, kept out of the
+    /// hierarchy entirely while Compact Layout is current — see
+    /// `fullLayoutContentConstraints`'s own comment), it's the *only*
+    /// thing left determining its size once nothing else constrains it.
+    /// Either way, that "at least this large" pressure feeds into the
+    /// window's own automatic content-based sizing and grows the whole
+    /// Overlay to fit — confirmed by watching it happen live, for both a
+    /// long real Track title in Compact Layout and real artwork/track
+    /// info loading into Full Layout's own (otherwise-unconstrained)
+    /// content a few seconds after launch.
+    private func suppressIntrinsicSizeGrowthPressure(_ view: NSView) {
+        view.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        view.setContentCompressionResistancePriority(.init(1), for: .vertical)
+    }
+
+    /// Full Layout's Now Playing content: a big square artwork area, an
+    /// always-visible seek bar with elapsed/remaining time, and the
+    /// current Track's title/artist beside a persistent lyrics-toggle
+    /// button — the bottom-corner spot Spotify's own Mini Player gives its
+    /// "add to library" button. A static skeleton: no hover-revealed
+    /// transport row or top chrome bar yet (a later ticket), and no
+    /// blurred background behind the artwork yet either (later still).
+    private func configureFullLayoutFace() {
+        fullArtworkView.wantsLayer = true
+        fullArtworkView.layer?.cornerRadius = Self.fullArtworkCornerRadius
+        fullArtworkView.layer?.masksToBounds = true
+        fullArtworkView.image = OverlayArtworkPlaceholder.image(pointSize: 32)
+        fullArtworkView.contentTintColor = OverlayArtworkPlaceholder.tint
+        fullArtworkView.imageScaling = .scaleProportionallyDown
+        fullArtworkView.translatesAutoresizingMaskIntoConstraints = false
+        fullArtworkView.setContentHuggingPriority(.init(1), for: .horizontal)
+        fullArtworkView.setContentHuggingPriority(.init(1), for: .vertical)
+
+        fullTitleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        fullTitleLabel.textColor = .white
+        fullTitleLabel.lineBreakMode = .byTruncatingTail
+        fullTitleLabel.maximumNumberOfLines = 1
+        fullTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        fullArtistLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        fullArtistLabel.textColor = .white.withAlphaComponent(0.7)
+        fullArtistLabel.lineBreakMode = .byTruncatingTail
+        fullArtistLabel.maximumNumberOfLines = 1
+        fullArtistLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let fullTextStack = NSStackView(views: [fullTitleLabel, fullArtistLabel])
+        fullTextStack.orientation = .vertical
+        fullTextStack.alignment = .leading
+        fullTextStack.spacing = 2
+        fullTextStack.translatesAutoresizingMaskIntoConstraints = false
+
+        fullLyricsButton.image = NSImage(systemSymbolName: "quote.bubble", accessibilityDescription: "Lyrics")
+        styleTransportButton(fullLyricsButton)
+        fullLyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
+        fullLyricsButton.target = self
+        fullLyricsButton.action = #selector(lyricsTapped)
+        fullLyricsButton.translatesAutoresizingMaskIntoConstraints = false
+
+        elapsedLabel.font = .systemFont(ofSize: 10, weight: .regular)
+        elapsedLabel.textColor = .white.withAlphaComponent(0.7)
+        elapsedLabel.translatesAutoresizingMaskIntoConstraints = false
+        elapsedLabel.setContentHuggingPriority(.required, for: .horizontal)
+
+        remainingLabel.font = .systemFont(ofSize: 10, weight: .regular)
+        remainingLabel.textColor = .white.withAlphaComponent(0.7)
+        remainingLabel.alignment = .right
+        remainingLabel.translatesAutoresizingMaskIntoConstraints = false
+        remainingLabel.setContentHuggingPriority(.required, for: .horizontal)
+
+        // Shares `seekSliderChanged`/`isDraggingSeek` with Compact Layout's
+        // own seek slider — only one of the two is ever on screen at once,
+        // so one shared commit-on-release state serves both.
+        styleSlider(fullSeekSlider, min: 0, max: 1)
+        fullSeekSlider.target = self
+        fullSeekSlider.action = #selector(seekSliderChanged)
+
+        let seekRow = NSStackView(views: [elapsedLabel, fullSeekSlider, remainingLabel])
+        seekRow.orientation = .horizontal
+        seekRow.spacing = 8
+        seekRow.translatesAutoresizingMaskIntoConstraints = false
+
+        // Every dynamic-content view built above needs this — see
+        // `suppressIntrinsicSizeGrowthPressure`'s own comment for why.
+        [fullArtworkView, fullTitleLabel, fullArtistLabel, fullTextStack, elapsedLabel, remainingLabel, fullSeekSlider, seekRow]
+            .forEach(suppressIntrinsicSizeGrowthPressure)
+
+        fullFace.translatesAutoresizingMaskIntoConstraints = false
+        fullFace.addSubview(fullArtworkView)
+        fullFace.addSubview(seekRow)
+        fullFace.addSubview(fullTextStack)
+        // Not added as a subview of `self` here — see
+        // `fullLayoutContentConstraints`'s own comment: `update(layout:)`
+        // adds it only while Full Layout is actually current.
+
+        // A sibling of `fullFace`, not one of its subviews: it must stay
+        // reachable even while the Lyrics face is showing (so the listener
+        // always has a way back), the same way Compact Layout's own
+        // lyrics button survives inside `controlsOverlay`, a layer above
+        // both of its faces rather than part of either one.
+        addSubview(fullLyricsButton)
+
+        // `fullFace` itself is kept out of the view hierarchy entirely
+        // (not just hidden) until Full Layout is actually current —
+        // `update(layout:)` adds it and activates these constraints
+        // together, and removes it after deactivating them. A view
+        // outside the hierarchy entirely can't influence anything's
+        // sizing, no matter what its own content-size properties are set
+        // to — see `suppressIntrinsicSizeGrowthPressure`'s own comment
+        // for the underlying mechanism this sidesteps.
+        //
+        // The artwork's width is pinned to `fullFace`'s own width exactly
+        // (leading and trailing both fixed) rather than capped with an
+        // oversized-low-priority "grow as big as possible" constraint —
+        // the usual trick for an ordinary view, but not a safe one for a
+        // window's own content view (again, see
+        // `suppressIntrinsicSizeGrowthPressure`). Pinning both edges
+        // exactly removes any pull at all: the artwork always exactly
+        // matches whatever width the window
+        // already has, never asks for more.
+        fullLayoutContentConstraints = [
+            fullArtworkView.leadingAnchor.constraint(equalTo: fullFace.leadingAnchor, constant: 16),
+            fullArtworkView.trailingAnchor.constraint(equalTo: fullFace.trailingAnchor, constant: -16),
+            fullArtworkView.heightAnchor.constraint(equalTo: fullArtworkView.widthAnchor),
+            fullArtworkView.topAnchor.constraint(equalTo: fullFace.topAnchor, constant: 16),
+            // A minimum gap, not a fixed position — the bottom rows below
+            // are anchored from the bottom up. If the window is wide
+            // enough relative to its height that the width-matched square
+            // wouldn't leave room for them, this constraint is the one
+            // that gives (a visual clipping concern, not a window-growth
+            // one) — Full Layout at very short, very wide sizes is an
+            // extreme this static skeleton doesn't attempt to handle
+            // gracefully yet.
+            fullArtworkView.bottomAnchor.constraint(lessThanOrEqualTo: seekRow.topAnchor, constant: -12),
+
+            seekRow.leadingAnchor.constraint(equalTo: fullFace.leadingAnchor, constant: 16),
+            seekRow.trailingAnchor.constraint(equalTo: fullFace.trailingAnchor, constant: -16),
+            seekRow.bottomAnchor.constraint(equalTo: fullTextStack.topAnchor, constant: -10),
+
+            fullTextStack.leadingAnchor.constraint(equalTo: fullFace.leadingAnchor, constant: 16),
+            fullTextStack.trailingAnchor.constraint(lessThanOrEqualTo: fullLyricsButton.leadingAnchor, constant: -8),
+            fullTextStack.centerYAnchor.constraint(equalTo: fullLyricsButton.centerYAnchor),
+
+            // `fullFace`'s own pin-to-self — grouped with the rest here,
+            // not activated unconditionally, since it only makes sense
+            // once `fullFace` has actually been added as a subview of
+            // `self` (which requires a common ancestor to resolve
+            // against), which `update(layout:)` does immediately before
+            // activating this whole array.
+            fullFace.leadingAnchor.constraint(equalTo: leadingAnchor),
+            fullFace.trailingAnchor.constraint(equalTo: trailingAnchor),
+            fullFace.topAnchor.constraint(equalTo: topAnchor),
+            fullFace.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ]
+
+        // Positioned relative to `self`, not `fullFace` — always active
+        // (unlike the group above), since a fixed-intrinsic-size button
+        // pinned to a corner imposes no minimum-size pressure the way the
+        // toggleable content above does, and it must stay positioned
+        // correctly even while hidden in Compact Layout, ready to appear
+        // the instant a resize crosses into Full Layout.
+        NSLayoutConstraint.activate([
+            fullLyricsButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            fullLyricsButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14),
         ])
     }
 
@@ -350,6 +682,13 @@ final class OverlayCardView: DraggableBackgroundView {
         stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
         controlsOverlay.addSubview(stack)
+
+        // `seekSlider` is required-exact-equal to `controlsOverlay`'s (and
+        // so `self`'s) own width below — see
+        // `suppressIntrinsicSizeGrowthPressure`'s own comment: without
+        // this, its default compression resistance can still tug at that
+        // otherwise-undetermined width.
+        [seekSlider, stack].forEach(suppressIntrinsicSizeGrowthPressure)
 
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: controlsOverlay.centerXAnchor),

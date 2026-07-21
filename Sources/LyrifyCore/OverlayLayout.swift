@@ -27,11 +27,21 @@ public enum OverlayLayout: Equatable, Sendable {
         }
     }
 
-    /// Below this height, Compact Layout; at or above it, Full Layout —
-    /// roughly where the Overlay is tall enough to read as square rather
-    /// than a short bar, matching Compact Layout's own width today. A
-    /// tuning knob, not a locked design decision.
-    public static let thresholdHeight: CGFloat = 220
+    /// Below this height, Compact Layout; at or above it, Full Layout.
+    /// Set high enough that Full Layout's own structural minimum — its
+    /// square artwork area (which grows with the Overlay's width, up to
+    /// `OverlayController.maximumSize.width`) plus its seek bar and
+    /// title/artist chrome beneath it — always actually fits within any
+    /// height Full Layout claims to support, at any width Full Layout is
+    /// reachable at. Set too low relative to that width ceiling, and a
+    /// resize down towards the boundary can get stuck: Full Layout's own
+    /// required constraints can't be satisfied by a height that's
+    /// nominally "Full Layout territory" but too short for what Full
+    /// Layout structurally needs at the Overlay's current width. A tuning
+    /// knob, not a locked design decision — but bumping
+    /// `OverlayController.maximumSize.width` up means bumping this up
+    /// too, not independently.
+    public static let thresholdHeight: CGFloat = 420
 
     public static let minimumLineCount = 2
     public static let minimumFontSize: CGFloat = 15

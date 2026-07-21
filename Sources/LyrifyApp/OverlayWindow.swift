@@ -20,7 +20,13 @@ final class OverlayWindow: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        level = .statusBar
+        // .floating, not .statusBar: the latter is the same level the real
+        // system status-bar menus use, which makes macOS treat any window
+        // there as "a menu is open" and dim every other status item for as
+        // long as it's on screen. .floating still sits above regular
+        // windows and, paired with .fullScreenAuxiliary below, still joins
+        // a fullscreen app's Space — without that system-wide side effect.
+        level = .floating
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         hidesOnDeactivate = false
         ignoresMouseEvents = false

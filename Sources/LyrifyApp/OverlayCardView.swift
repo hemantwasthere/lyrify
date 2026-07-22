@@ -1563,7 +1563,7 @@ final class OverlayCardView: DraggableBackgroundView {
         titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         titleLabel.textColor = .white
 
-        let blurLabel = PassthroughLabel(labelWithString: "Blurred Background")
+        let blurLabel = PassthroughLabel(labelWithString: "Background color")
         blurLabel.font = .systemFont(ofSize: 12, weight: .regular)
         blurLabel.textColor = .white.withAlphaComponent(0.85)
 

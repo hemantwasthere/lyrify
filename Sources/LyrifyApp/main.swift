@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let anchorSource = PlaybackAnchorSource(bridge: bridge)
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
         let artworkProvider = ArtworkProvider(transport: URLSessionLyricsTransport())
-        let blurredArtworkProvider = BlurredArtworkProvider(blurring: CoreImageArtworkBlur())
+        let blurredArtworkProvider = BlurredArtworkProvider(blurring: CoreImageArtworkColorWash())
         let overlayVisibility = OverlayVisibilityPreference()
         let overlayPosition = OverlayPositionPreference()
         let overlaySize = OverlaySizePreference()

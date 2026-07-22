@@ -1,11 +1,11 @@
 import Foundation
 
 /// Turns raw artwork bytes into the treatment Full Layout's background uses
-/// behind its smaller, sharp artwork copy — a Gaussian blur plus a
-/// saturation boost, in production (`CoreImageArtworkBlur`). Injected so
-/// `BlurredArtworkProvider` is testable without CoreImage in the loop, the
-/// same reason `LyricsProvider`/`ArtworkProvider` take an injected transport
-/// rather than calling `URLSession` directly.
+/// behind its smaller, sharp artwork copy — a flat color wash sampled from
+/// the artwork itself, in production (`CoreImageArtworkColorWash`).
+/// Injected so `BlurredArtworkProvider` is testable without CoreImage in the
+/// loop, the same reason `LyricsProvider`/`ArtworkProvider` take an injected
+/// transport rather than calling `URLSession` directly.
 public protocol ArtworkBlurring: Sendable {
     /// Nil means the computation itself failed (corrupt or unrecognized
     /// image data) — never thrown, since there is no retry that would help.
@@ -25,10 +25,10 @@ public protocol ArtworkBlurring: Sendable {
 /// computation can never produce a different answer.
 public actor BlurredArtworkProvider {
     public enum Outcome: Equatable, Sendable {
-        /// The blurred, color-boosted image bytes.
+        /// The color-wash image bytes.
         case found(Data)
 
-        /// The blur computation failed on this artwork's bytes.
+        /// The wash computation failed on this artwork's bytes.
         case unavailable
     }
 

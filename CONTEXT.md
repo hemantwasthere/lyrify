@@ -79,11 +79,11 @@ The Overlay's resting face: a small spinning Disc of the current Track's album a
 _Avoid_: Minimized, collapsed (retired terms — see ADR-0008)
 
 **Compact Layout**:
-The Now Playing Face's rendering below Full Layout's size threshold: a small square thumbnail with the current Track's title and artist beside it, and a condensed set of controls revealed on hover. The only layout the Overlay renders today, at every size within its current resizable bounds.
+The Now Playing Face's rendering below Full Layout's size threshold: a thumbnail with the current Track's title and artist beside it, and controls revealed on hover. Internally width-tiered — how much chrome and how many transport controls are shown narrows in steps as the Overlay gets narrower, rather than one fixed control set at every width (ADR-0010).
 _Avoid_: Minimized, collapsed (retired terms — see ADR-0008)
 
 **Full Layout**:
-The Now Playing Face's rendering at larger sizes: a big square artwork area, an always-visible seek bar, and additional chrome, styled after Spotify's own Mini Player. Not yet rendered — the Overlay's resizable bounds are currently capped to stay within Compact Layout's own territory until a later ticket adds it.
+The Now Playing Face's rendering at larger sizes (at or above `OverlayLayout.thresholdHeight`): a big square artwork area, an always-visible seek bar, and additional chrome — a hover-revealed top bar (hide, drag handle, settings) and transport row (mute, shuffle, previous, play/pause, next, repeat, share) overlaid on the artwork — styled after Spotify's own Mini Player.
 _Avoid_: Expanded (retired term — see ADR-0008)
 
 **Disc**:
@@ -95,7 +95,7 @@ The Overlay's other face, reached by the lyrics button: the Active Line and its 
 _Avoid_: Expanded, card (retired terms — see ADR-0008)
 
 **Settings Face**:
-The Overlay's third face, reached by Full Layout's settings icon: a single toggle for the blurred background, and a Done button that returns to whichever of the Now Playing Face or Lyrics Face was showing before it was opened.
+The Overlay's third face, reached by Full Layout's settings icon: a single toggle for the artwork background's color-extraction wash (ADR-0011), labelled to match Spotify's own "Background color," and a Done button that returns to whichever of the Now Playing Face or Lyrics Face was showing before it was opened.
 _Avoid_: Settings panel, preferences (this is a Face like the other two, not a separate kind of surface)
 
 **Idle State**:

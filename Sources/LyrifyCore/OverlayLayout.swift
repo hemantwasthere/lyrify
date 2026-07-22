@@ -41,8 +41,13 @@ public enum OverlayLayout: Equatable, Sendable {
 
     /// At or above this width, Compact Layout resolves its widest tier,
     /// `.full` — the full chrome bar and transport row, same control set
-    /// Full Layout itself shows.
-    public static let fullTierMinimumWidth: CGFloat = 220
+    /// Full Layout itself shows. Tuned empirically, not a locked design
+    /// decision (matching `thresholdHeight`'s own tuning-knob framing): the
+    /// `.full` tier's 8-icon transport row structurally needs more than
+    /// the 220pt this was initially set to (matching the pre-`.full`-tier
+    /// `defaultSize.width`) — confirmed live, where the unconstrained
+    /// content pressured the window to grow past 220pt regardless.
+    public static let fullTierMinimumWidth: CGFloat = 280
 
     /// At or above this width (but below `fullTierMinimumWidth`), Compact
     /// Layout resolves `.reduced` — the settings icon drops, the drag grip

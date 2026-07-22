@@ -93,6 +93,39 @@ final class OverlayCardView: DraggableBackgroundView {
     /// dot, drag-handle indicator, and settings icon comfortably.
     private static let chromeBarHeight: CGFloat = 20
 
+    /// The decorative resize-handle glyph's size, and the size of its own
+    /// nested hover/cursor zone — small enough to read as a corner detail,
+    /// not a real button.
+    private static let resizeHandleSize: CGFloat = 14
+
+    /// Shared by the decorative glyph and the cursor built from it, so the
+    /// two can never drift apart visually.
+    private static let resizeHandleSymbolName = "arrow.up.left.and.arrow.down.right"
+
+    /// How far the resize-handle glyph sits from the card's own
+    /// bottom-right corner — as small as still reads as a corner detail
+    /// rather than being clipped by the card's own rounded corner. Not
+    /// just cosmetic: `PassthroughImageView` falls through a click to
+    /// `DraggableBackgroundView`'s own *move*-drag (the same as the
+    /// drag-handle indicator), so a click here only reaches native
+    /// edge-*resize* instead if it lands within `OverlayWindow`'s own
+    /// resize hit-region at the true frame edge — a margin native to
+    /// `.resizable` windows, narrower than this glyph's own size, and
+    /// outside this view hierarchy entirely to inspect or rely on
+    /// precisely. Sitting this close is the best fit achievable without
+    /// writing new resize-detection logic of its own, which the ticket
+    /// this shipped in deliberately ruled out.
+    private static let resizeHandleInset: CGFloat = 2
+
+    /// A custom diagonal resize cursor — AppKit has no public one (only
+    /// `.resizeLeftRight`/`.resizeUpDown`, neither diagonal), so this
+    /// builds one from the same SF Symbol the decorative glyph itself
+    /// uses, for visual consistency between the two.
+    private static let resizeCursor: NSCursor = {
+        let image = NSImage(systemSymbolName: resizeHandleSymbolName, accessibilityDescription: nil) ?? NSImage()
+        return NSCursor(image: image, hotSpot: NSPoint(x: image.size.width / 2, y: image.size.height / 2))
+    }()
+
     /// The inline volume slider's width once revealed beside the mute
     /// button — short enough to read as an inline reveal within the
     /// transport row, not a second full-width slider.
@@ -181,6 +214,22 @@ final class OverlayCardView: DraggableBackgroundView {
     /// its own rect, regardless of any other tracking area's rect
     /// containing it.
     private var muteHoverTrackingArea: NSTrackingArea?
+
+    /// The decorative resize-handle glyph, bottom-right corner of the
+    /// card — shared by both layouts (unlike the chrome bar/transport
+    /// row, it has no layout-specific content, so one instance and one
+    /// hover-reveal alongside whichever layout's own chrome is currently
+    /// fading in/out suffices). A `PassthroughImageView`, so a click on it
+    /// falls through to `DraggableBackgroundView`/the window's own native
+    /// edge-resize, the same way the drag-handle indicators already do
+    /// for dragging.
+    private let resizeHandleImageView = PassthroughImageView()
+
+    /// A third, nested tracking area scoped to `resizeHandleImageView`'s
+    /// own frame — swaps the cursor on enter/exit, independent of the
+    /// general hover reveal and `muteHoverTrackingArea`, the same way
+    /// that one is independent of the card-wide `trackingArea`.
+    private var resizeHandleTrackingArea: NSTrackingArea?
 
     /// Full Layout's hover-revealed top chrome bar: the hide (red dot),
     /// drag-handle indicator, and settings icon.
@@ -306,6 +355,7 @@ final class OverlayCardView: DraggableBackgroundView {
         // adds it only once Full Layout is actually current.
 
         configureSettingsFace()
+        configureResizeHandle()
     }
 
     @available(*, unavailable)
@@ -328,6 +378,24 @@ final class OverlayCardView: DraggableBackgroundView {
         )
         addTrackingArea(area)
         trackingArea = area
+
+        if let resizeHandleTrackingArea {
+            removeTrackingArea(resizeHandleTrackingArea)
+        }
+        // `resizeHandleImageView` is a permanent sibling of `self` — never
+        // detached the way `fullFace`'s own content is, just possibly not
+        // laid out yet on the very first pass.
+        if !resizeHandleImageView.bounds.isEmpty {
+            let resizeHandleFrame = convert(resizeHandleImageView.bounds, from: resizeHandleImageView)
+            let resizeArea = NSTrackingArea(
+                rect: resizeHandleFrame,
+                options: [.mouseEnteredAndExited, .activeAlways],
+                owner: self,
+                userInfo: nil
+            )
+            addTrackingArea(resizeArea)
+            resizeHandleTrackingArea = resizeArea
+        }
 
         if let muteHoverTrackingArea {
             removeTrackingArea(muteHoverTrackingArea)
@@ -372,14 +440,29 @@ final class OverlayCardView: DraggableBackgroundView {
 
     /// Compact and Full Layout each reveal their own chrome bar and
     /// transport row together, on the same hover — identical shapes, two
-    /// instances. The mute hover zone is nested independently of both —
-    /// entering or exiting it only ever reveals or hides whichever of
-    /// `fullVolumeSlider`/`volumeSlider` belongs to the current layout.
+    /// instances — alongside the shared resize-handle glyph. The mute
+    /// hover zone and the resize-handle zone are each nested independently
+    /// of that reveal and of each other: entering/exiting the mute zone
+    /// only ever reveals or hides whichever of `fullVolumeSlider`/
+    /// `volumeSlider` belongs to the current layout; entering/exiting the
+    /// resize-handle zone only ever swaps the cursor.
     override func mouseEntered(with event: NSEvent) {
+        if event.trackingArea === resizeHandleTrackingArea {
+            // `.set()`, not `.push()`/`.pop()`: this panel can be hidden
+            // (the hide button, or a resize crossing a layout boundary)
+            // without `mouseExited` necessarily firing first, and a stack
+            // imbalance from a missed `.pop()` would compound across
+            // repeated hovers. `.set()` only ever affects the current
+            // cursor directly, so a missed exit self-corrects on the next
+            // successful one instead of accumulating.
+            Self.resizeCursor.set()
+            return
+        }
         if event.trackingArea === muteHoverTrackingArea {
             revealVolumeSlider(true)
             return
         }
+        resizeHandleImageView.animator().alphaValue = 1
         if isFullLayout {
             fullControlsOverlay.animator().alphaValue = 1
             fullTopChromeBar.animator().alphaValue = 1
@@ -390,6 +473,10 @@ final class OverlayCardView: DraggableBackgroundView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        if event.trackingArea === resizeHandleTrackingArea {
+            NSCursor.arrow.set()
+            return
+        }
         if event.trackingArea === muteHoverTrackingArea {
             // Ignored mid-drag — a fast drag gesture can momentarily carry
             // the cursor outside the hover zone's own rect, and hiding the
@@ -398,6 +485,7 @@ final class OverlayCardView: DraggableBackgroundView {
             revealVolumeSlider(false)
             return
         }
+        resizeHandleImageView.animator().alphaValue = 0
         if isFullLayout {
             fullControlsOverlay.animator().alphaValue = 0
             fullTopChromeBar.animator().alphaValue = 0
@@ -480,6 +568,7 @@ final class OverlayCardView: DraggableBackgroundView {
         // Reset both layouts' hover-revealed chrome immediately (not
         // animated) rather than leaving a stale reveal from before a resize
         // crossed the threshold mid-hover.
+        resizeHandleImageView.alphaValue = 0
         compactChromeBar.alphaValue = 0
         compactTransportRow.alphaValue = 0
         fullControlsOverlay.alphaValue = 0
@@ -500,11 +589,19 @@ final class OverlayCardView: DraggableBackgroundView {
             // otherwise bury whichever of these two is currently on top —
             // forcing both hidden regardless of z-order sidesteps that
             // entirely, since a hidden view never draws no matter how it
-            // stacks.
+            // stacks. `resizeHandleImageView` needs the same treatment —
+            // unlike `lyricsButton`/`fullLyricsButton`, it has no reason to
+            // stay reachable over the Lyrics/Settings Face, and being a
+            // sibling of `self` (not nested in `compactFace`/`fullFace`)
+            // means it isn't hidden by either of those cascading already.
             compactFace.isHidden = true
             fullFace.isHidden = true
+            resizeHandleImageView.isHidden = true
             return
         }
+
+        // Reachable again now that neither face above is showing.
+        resizeHandleImageView.isHidden = false
 
         compactFace.isHidden = isFullLayout
         fullFace.isHidden = !isFullLayout
@@ -596,6 +693,11 @@ final class OverlayCardView: DraggableBackgroundView {
         crossfade(from: activeNowPlayingFace, to: lyricsFace)
         lyricsButton.contentTintColor = .white
         fullLyricsButton.contentTintColor = .white
+        // Unlike `lyricsButton`/`fullLyricsButton`, the resize-handle glyph
+        // has no reason to stay reachable over the Lyrics Face, and being
+        // a sibling of `self` (not nested in `compactFace`/`fullFace`)
+        // means it isn't hidden by either of those cascading already.
+        resizeHandleImageView.isHidden = true
     }
 
     /// Crossfades back to whichever Now Playing content is current.
@@ -603,6 +705,7 @@ final class OverlayCardView: DraggableBackgroundView {
         crossfade(from: lyricsFace, to: activeNowPlayingFace)
         lyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
         fullLyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
+        resizeHandleImageView.isHidden = false
     }
 
     /// What the Lyrics face shows — forwarded straight to `LyricsCardView`,
@@ -1161,6 +1264,25 @@ final class OverlayCardView: DraggableBackgroundView {
         ])
     }
 
+    /// The decorative resize-handle glyph — hover-revealed alongside
+    /// whichever layout's own chrome is currently fading in/out (see
+    /// `mouseEntered`/`mouseExited`), reset to invisible in
+    /// `update(layout:)` the same way that chrome already is.
+    private func configureResizeHandle() {
+        resizeHandleImageView.image = NSImage(systemSymbolName: Self.resizeHandleSymbolName, accessibilityDescription: nil)
+        resizeHandleImageView.contentTintColor = .white.withAlphaComponent(0.4)
+        resizeHandleImageView.alphaValue = 0
+        resizeHandleImageView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(resizeHandleImageView)
+
+        NSLayoutConstraint.activate([
+            resizeHandleImageView.widthAnchor.constraint(equalToConstant: Self.resizeHandleSize),
+            resizeHandleImageView.heightAnchor.constraint(equalToConstant: Self.resizeHandleSize),
+            resizeHandleImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.resizeHandleInset),
+            resizeHandleImageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Self.resizeHandleInset),
+        ])
+    }
+
     /// The settings panel: one clearly-labelled toggle for the blurred
     /// background, and a Done button back. A sibling of `self`, pinned to
     /// its full bounds exactly like `lyricsFace` — reachable regardless of
@@ -1317,6 +1439,7 @@ final class OverlayCardView: DraggableBackgroundView {
         wasShowingLyricsBeforeSettings = !lyricsFace.isHidden
         let current = wasShowingLyricsBeforeSettings ? lyricsFace : activeNowPlayingFace
         crossfade(from: current, to: settingsFace)
+        resizeHandleImageView.isHidden = true
     }
 
     /// Returns to Lyrics or Now Playing content, matching whichever was
@@ -1328,6 +1451,7 @@ final class OverlayCardView: DraggableBackgroundView {
     @objc private func settingsDoneTapped() {
         let destination = wasShowingLyricsBeforeSettings ? lyricsFace : activeNowPlayingFace
         crossfade(from: settingsFace, to: destination)
+        resizeHandleImageView.isHidden = false
     }
 
     @objc private func blurredBackgroundToggled(_ sender: NSSwitch) {

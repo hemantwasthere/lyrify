@@ -82,6 +82,17 @@ final class OverlayCardView: DraggableBackgroundView {
     /// dot, drag-handle indicator, and settings icon comfortably.
     private static let chromeBarHeight: CGFloat = 20
 
+    /// The inline volume slider's width once revealed beside the mute
+    /// button — short enough to read as an inline reveal within the
+    /// transport row, not a second full-width slider.
+    private static let fullVolumeSliderWidth: CGFloat = 70
+
+    /// `fullControlsOverlay`'s transport row spacing — shared with the
+    /// mute hover zone's own width calculation, since that zone must
+    /// reach exactly as far as the revealed slider's own right edge
+    /// actually sits, not just the slider's bare width.
+    private static let fullTransportRowSpacing: CGFloat = 20
+
     var onTogglePlayPause: (() -> Void)?
     var onSkipToNext: (() -> Void)?
     var onSkipToPrevious: (() -> Void)?
@@ -113,10 +124,52 @@ final class OverlayCardView: DraggableBackgroundView {
     private let elapsedLabel = PassthroughLabel(labelWithString: "0:00")
     private let remainingLabel = PassthroughLabel(labelWithString: "0:00")
 
-    /// Full Layout's hover-revealed transport row (shuffle, previous,
-    /// play/pause, next, repeat), overlaid on the artwork.
+    /// Full Layout's hover-revealed transport row (mute, shuffle, previous,
+    /// play/pause, next, repeat, share), overlaid on the artwork.
     private let fullControlsOverlay = NSView()
     private let fullPlayPauseButton = NSButton()
+
+    /// The mute/volume control, leftmost in `fullControlsOverlay`'s
+    /// transport row: `fullMuteButton` toggles mute instantly on click;
+    /// `fullVolumeSlider` is a second, nested hover-reveal — hidden until
+    /// the pointer is specifically over `fullMuteButton` or the slider
+    /// itself (`muteHoverTrackingArea`), distinct from the transport row's
+    /// own card-wide hover reveal. The mute/volume *behavior* — toggling,
+    /// committing a drag, deriving the icon — lives in `applyVolume(_:)`,
+    /// `volumeSliderChanged`, and `muteTapped`, shared with Compact
+    /// Layout's own `volumeSlider` the same way `fullSeekSlider`/
+    /// `seekSlider` already share `isDraggingSeek`, so a second button/
+    /// slider pair can call those same handlers unchanged. The *hover
+    /// geometry* (`muteHoverTrackingArea`) is specific to this one
+    /// instance's own frame, though, and isn't itself generalized here —
+    /// a second instance needs its own equivalent tracking area, the same
+    /// way Compact and Full Layout's chrome each already needs its own
+    /// tracking/reveal wiring rather than sharing one.
+    private let fullMuteButton = NSButton()
+    private let fullVolumeSlider = NSSlider()
+
+    /// Whether the mute button last silenced Spotify's volume — driven
+    /// only by an explicit mute/unmute (button tap or dragging a slider to
+    /// or away from zero), not derived from the slider's current value on
+    /// every read, so the icon can't disagree with what the listener last
+    /// actually chose.
+    private var isMuted = false
+
+    /// The volume last known before muting — restored when unmuting.
+    /// Seeded at a plausible full volume; overwritten almost immediately
+    /// by `OverlayController`'s own startup fetch of Spotify's real
+    /// current volume via `updateVolume(_:)`, the same way other
+    /// placeholder values here (the artwork placeholder image, "Nothing
+    /// Playing") are seeded before the real value is known.
+    private var lastNonZeroVolume = 100
+
+    /// A second, nested tracking area scoped to the mute button and its
+    /// hover-revealed slider together — narrower than `trackingArea`'s own
+    /// card-wide rect, and independent of it: AppKit fires enter/exit for
+    /// each tracking area on a view separately as the cursor crosses its
+    /// own rect, regardless of any other tracking area's rect containing
+    /// it.
+    private var muteHoverTrackingArea: NSTrackingArea?
 
     /// Full Layout's hover-revealed top chrome bar: the hide (red dot),
     /// drag-handle indicator, and settings icon.
@@ -242,11 +295,51 @@ final class OverlayCardView: DraggableBackgroundView {
         )
         addTrackingArea(area)
         trackingArea = area
+
+        if let muteHoverTrackingArea {
+            removeTrackingArea(muteHoverTrackingArea)
+        }
+        // Only meaningful while Full Layout is actually current: outside
+        // it, `fullFace` (and `fullMuteButton` beneath it) has been
+        // removed from the hierarchy entirely, not just hidden (see
+        // `fullLayoutContentConstraints`'s own comment on why) — its
+        // `bounds` survives that removal unchanged, so checking emptiness
+        // alone can't detect the detached case, but `.window == nil`
+        // reliably can. `convert(_:from:)` against a view outside this
+        // hierarchy would otherwise be undefined.
+        guard isFullLayout, fullMuteButton.window != nil else { return }
+        let muteButtonFrame = convert(fullMuteButton.bounds, from: fullMuteButton)
+        // Reaches exactly as far as the revealed slider's own right edge —
+        // the slider's width plus the row spacing between it and the mute
+        // button, not just the slider's bare width, or hovering its last
+        // stretch would fall outside this zone and collapse it back.
+        let hoverZone = CGRect(
+            x: muteButtonFrame.minX,
+            y: muteButtonFrame.minY,
+            width: muteButtonFrame.width + Self.fullTransportRowSpacing + Self.fullVolumeSliderWidth,
+            height: muteButtonFrame.height
+        )
+        let muteArea = NSTrackingArea(
+            rect: hoverZone,
+            options: [.mouseEnteredAndExited, .activeAlways],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(muteArea)
+        muteHoverTrackingArea = muteArea
     }
 
     /// Compact Layout reveals its own controls overlay; Full Layout reveals
     /// its transport row and top chrome bar together, on the same hover.
+    /// The mute hover zone is nested independently of both — entering or
+    /// exiting it only ever reveals or hides `fullVolumeSlider`, regardless
+    /// of which layout is current, since it's only actually reachable
+    /// while Full Layout's own transport row is already showing.
     override func mouseEntered(with event: NSEvent) {
+        if event.trackingArea === muteHoverTrackingArea {
+            revealFullVolumeSlider(true)
+            return
+        }
         if isFullLayout {
             fullControlsOverlay.animator().alphaValue = 1
             fullTopChromeBar.animator().alphaValue = 1
@@ -256,11 +349,41 @@ final class OverlayCardView: DraggableBackgroundView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        if event.trackingArea === muteHoverTrackingArea {
+            // Ignored mid-drag — a fast drag gesture can momentarily carry
+            // the cursor outside the hover zone's own rect, and hiding the
+            // slider out from under an active drag would be jarring.
+            guard !isDraggingVolume else { return }
+            revealFullVolumeSlider(false)
+            return
+        }
         if isFullLayout {
             fullControlsOverlay.animator().alphaValue = 0
             fullTopChromeBar.animator().alphaValue = 0
         } else {
             controlsOverlay.animator().alphaValue = 0
+        }
+    }
+
+    /// Fades `fullVolumeSlider` in or out — a plain `isHidden` toggle would
+    /// jump instantly, and hiding it collapses its own space (and the
+    /// spacing around it) in the transport row's stack view automatically,
+    /// the same way any hidden arranged subview does.
+    private func revealFullVolumeSlider(_ reveal: Bool) {
+        if reveal {
+            fullVolumeSlider.isHidden = false
+            fullVolumeSlider.alphaValue = 0
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.crossfadeDuration
+            fullVolumeSlider.animator().alphaValue = reveal ? 1 : 0
+        } completionHandler: { [weak self] in
+            // See `crossfade(from:to:)`'s own comment on why this
+            // completion handler needs `MainActor.assumeIsolated`.
+            guard let self, !reveal else { return }
+            MainActor.assumeIsolated {
+                self.fullVolumeSlider.isHidden = true
+            }
         }
     }
 
@@ -461,14 +584,40 @@ final class OverlayCardView: DraggableBackgroundView {
         remainingLabel.stringValue = "-" + PlaybackTimeFormat.string(forSeconds: trackDuration - position)
     }
 
-    /// Sets the volume slider's thumb to Spotify's actual current volume —
+    /// Sets both volume sliders' thumb to Spotify's actual current volume —
     /// called once when the controls first appear, so the first drag
     /// starts from the real value rather than jumping Spotify's volume to
     /// wherever the thumb happened to be drawn. Ignored while being
-    /// dragged, same as `updateSeek`.
+    /// dragged, same as `updateSeek`. Also seeds `isMuted`/
+    /// `lastNonZeroVolume` from this same real value, so the mute icon
+    /// never disagrees with Spotify's actual starting volume.
     func updateVolume(_ percent: Int) {
         guard !isDraggingVolume else { return }
+        applyVolume(percent)
+    }
+
+    /// Applies `percent` to both volume sliders, `isMuted`, and
+    /// `lastNonZeroVolume` together — the one place all three ever change,
+    /// shared by `updateVolume`, a committed slider drag, and the mute
+    /// button's own toggle, so the three can never drift out of sync with
+    /// each other.
+    private func applyVolume(_ percent: Int) {
         volumeSlider.doubleValue = Double(percent)
+        fullVolumeSlider.doubleValue = Double(percent)
+        isMuted = percent == 0
+        if percent > 0 { lastNonZeroVolume = percent }
+        updateMuteIcon()
+    }
+
+    /// Sets the mute button's glyph to reflect `isMuted` — muted and
+    /// unmuted are visually distinct symbols, not a tint change, so the
+    /// state reads at a glance without needing to also check the slider.
+    private func updateMuteIcon() {
+        let symbolName = isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"
+        fullMuteButton.image = NSImage(
+            systemSymbolName: symbolName,
+            accessibilityDescription: isMuted ? "Unmute" : "Mute"
+        )
     }
 
     /// Fades `from` out and `to` in together, leaving only `to` visible
@@ -768,17 +917,38 @@ final class OverlayCardView: DraggableBackgroundView {
         ])
     }
 
-    /// Full Layout's transport row — shuffle, previous, play/pause, next,
-    /// repeat, share — overlaid on the artwork and faded in/out on hover
-    /// (`mouseEntered`/`mouseExited`), alongside `fullTopChromeBar`. A
-    /// `fullFace` subview, not a sibling of `self` the way `controlsOverlay`
-    /// and `fullLyricsButton` are: it has no need to survive into the
-    /// Lyrics face the way the lyrics-toggle button itself does, so it can
-    /// simply ride `fullFace`'s own add/remove cycle.
+    /// Full Layout's transport row — mute, shuffle, previous, play/pause,
+    /// next, repeat, share — overlaid on the artwork and faded in/out on
+    /// hover (`mouseEntered`/`mouseExited`), alongside `fullTopChromeBar`.
+    /// A `fullFace` subview, not a sibling of `self` the way
+    /// `controlsOverlay` and `fullLyricsButton` are: it has no need to
+    /// survive into the Lyrics face the way the lyrics-toggle button
+    /// itself does, so it can simply ride `fullFace`'s own add/remove
+    /// cycle.
     private func configureFullControlsOverlay() {
         fullControlsOverlay.translatesAutoresizingMaskIntoConstraints = false
         fullControlsOverlay.alphaValue = 0
         fullFace.addSubview(fullControlsOverlay)
+
+        updateMuteIcon()
+        styleTransportButton(fullMuteButton)
+        fullMuteButton.target = self
+        fullMuteButton.action = #selector(muteTapped)
+
+        // Shares `seekSliderChanged`/`isDraggingSeek`'s own sibling state
+        // — see this property's own doc comment for why sharing
+        // `volumeSliderChanged`/`isDraggingVolume` with Compact Layout's
+        // `volumeSlider` is safe here too.
+        styleSlider(fullVolumeSlider, min: 0, max: 100)
+        fullVolumeSlider.target = self
+        fullVolumeSlider.action = #selector(volumeSliderChanged)
+        // Hidden until the mute hover zone is entered — a hidden arranged
+        // subview collapses its own space (and surrounding spacing) in
+        // `row` automatically, the same way any NSStackView member does.
+        fullVolumeSlider.isHidden = true
+        NSLayoutConstraint.activate([
+            fullVolumeSlider.widthAnchor.constraint(equalToConstant: Self.fullVolumeSliderWidth),
+        ])
 
         let shuffleButton = transportButton(symbolName: "shuffle", action: #selector(shuffleTapped))
         let previousButton = transportButton(symbolName: "backward.fill", action: #selector(previousTapped))
@@ -795,9 +965,11 @@ final class OverlayCardView: DraggableBackgroundView {
         // sheet, per the ticket's own decision.
         let shareButton = transportButton(symbolName: "square.and.arrow.up", action: #selector(shareTapped))
 
-        let row = NSStackView(views: [shuffleButton, previousButton, fullPlayPauseButton, nextButton, repeatButton, shareButton])
+        let row = NSStackView(views: [
+            fullMuteButton, fullVolumeSlider, shuffleButton, previousButton, fullPlayPauseButton, nextButton, repeatButton, shareButton,
+        ])
         row.orientation = .horizontal
-        row.spacing = 20
+        row.spacing = Self.fullTransportRowSpacing
         row.translatesAutoresizingMaskIntoConstraints = false
         fullControlsOverlay.addSubview(row)
 
@@ -1073,10 +1245,32 @@ final class OverlayCardView: DraggableBackgroundView {
         onSeek?(sender.doubleValue)
     }
 
+    /// Shared by Compact Layout's `volumeSlider` and Full Layout's
+    /// `fullVolumeSlider` — only one is ever on screen at once, so this one
+    /// handler keeps both in sync regardless of which was actually
+    /// dragged, and updates the mute icon to match wherever the drag
+    /// landed.
     @objc private func volumeSliderChanged(_ sender: NSSlider) {
         isDraggingVolume = !isFinalSliderEvent
         guard isFinalSliderEvent else { return }
-        onVolumeChange?(Int(sender.doubleValue))
+
+        let value = Int(sender.doubleValue)
+        applyVolume(value)
+
+        onVolumeChange?(value)
+    }
+
+    /// Toggles mute instantly: silences to zero, remembering the volume to
+    /// restore, or restores whatever that was — applied optimistically to
+    /// both volume sliders and the mute icon itself rather than waiting on
+    /// any round trip, since nothing here polls Spotify's volume
+    /// continuously the way playback state does (only a one-time fetch at
+    /// startup — see `OverlayController`'s own use of `updateVolume(_:)`).
+    @objc private func muteTapped() {
+        let newVolume = isMuted ? lastNonZeroVolume : 0
+        applyVolume(newVolume)
+
+        onVolumeChange?(newVolume)
     }
 
     /// False for the mouse-down and every drag tick, true for whatever ends

@@ -270,16 +270,22 @@ final class OverlayCardView: DraggableBackgroundView {
     private var compactDragHandleFullTierConstraints: [NSLayoutConstraint] = []
     private var compactDragHandleReducedTierConstraints: [NSLayoutConstraint] = []
 
-    /// Compact Layout's own shuffle/repeat/share buttons — the three
+    /// Compact Layout's own shuffle/repeat/share buttons — three of the
     /// transport-row elements `applyCompactTier()` hides at `.reduced`
-    /// (alongside `compactMuteButton`), unlike previous/play/next, which
-    /// stay at every tier. Passed into `configureTransportRow` the same
-    /// way `compactMuteButton` already is, rather than built and
-    /// discarded as throwaway locals the way Full Layout's own (which
-    /// never need hiding) still are.
+    /// (alongside `compactMuteButton`), unlike play/next, which stay at
+    /// every tier. Passed into `configureTransportRow` the same way
+    /// `compactMuteButton` already is, rather than built and discarded as
+    /// throwaway locals the way Full Layout's own (which never need
+    /// hiding) still are.
     private let compactShuffleButton = NSButton()
     private let compactRepeatButton = NSButton()
     private let compactShareButton = NSButton()
+
+    /// Compact Layout's own previous button — unlike shuffle/repeat/
+    /// share, it survives `.reduced` and only drops at `.minimal` (and
+    /// `.bare`), alongside the lyrics button. Passed into
+    /// `configureTransportRow` for the same reason those three are.
+    private let compactPreviousButton = NSButton()
 
     /// The `CompactTier` last resolved for the Overlay's current size —
     /// `.full` until the first real `update(layout:)` call, matching
@@ -620,7 +626,21 @@ final class OverlayCardView: DraggableBackgroundView {
         fullLyricsButton.isHidden = !isFullLayout
         lyricsButton.isHidden = isFullLayout
 
-        guard lyricsFace.isHidden, settingsFace.isHidden else {
+        // Run before the Lyrics/Settings-Face guard below, not after: that
+        // guard's own early-return, whenever the Lyrics Face is still the
+        // (pre-dismissal) active face, would otherwise skip this entirely
+        // — exactly the moment a tier change needs to react to. Returns
+        // whether it just triggered a dismissal back to Now Playing, so
+        // the guard below can treat that the same as the Lyrics Face
+        // already being closed, rather than fighting the crossfade it
+        // just started (`showNowPlaying()` synchronously un-hides
+        // `compactFace`/`fullFace` as part of its own setup — the guard's
+        // `else` branch re-hiding both immediately after, based on
+        // `lyricsFace.isHidden`'s still-stale pre-animation value, would
+        // undo that in the same tick).
+        let dismissedLyricsFace = applyCompactTier()
+
+        guard (lyricsFace.isHidden || dismissedLyricsFace), settingsFace.isHidden else {
             // The Lyrics or Settings face is showing — nothing to reveal
             // until it's dismissed; `isFullLayout` alone remembers which
             // Now Playing content that'll be. Settings needs the same
@@ -645,21 +665,32 @@ final class OverlayCardView: DraggableBackgroundView {
 
         compactFace.isHidden = isFullLayout
         fullFace.isHidden = !isFullLayout
-
-        applyCompactTier()
     }
 
     /// Narrows Compact Layout's own chrome and transport row for
     /// `compactTier`, relative to `.full`'s own full-featured rendering
-    /// (ADR-0010): `.reduced` (and, for now, `.minimal`/`.bare` too, until
-    /// their own narrower tickets give them a further-reduced treatment
-    /// of their own) hides the settings icon, relocates the drag handle
-    /// to a corner alongside the hide dot, and drops mute/shuffle/repeat/
-    /// share from the transport row — leaving the lyrics button plus
-    /// previous/play/next. A no-op for Full Layout, which never narrows.
-    private func applyCompactTier() {
-        guard !isFullLayout else { return }
+    /// (ADR-0010): `.reduced` (and narrower) hides the settings icon,
+    /// relocates the drag handle to sit beside the hide dot, and drops
+    /// mute/shuffle/repeat/share from the transport row; `.minimal` (and,
+    /// for now, `.bare` too, until its own narrower ticket gives it a
+    /// further-reduced treatment of its own) additionally drops the
+    /// lyrics button and previous, leaving just play/next — and, if the
+    /// Lyrics Face happened to be open when a resize crossed into
+    /// `.minimal`, returns to the Now Playing Face, since there's no
+    /// longer a lyrics button to have reached it from. A no-op for Full
+    /// Layout, which never narrows.
+    ///
+    /// Returns whether it just triggered that Lyrics-Face dismissal, so
+    /// `update(layout:)`'s own Lyrics/Settings-Face guard (which runs
+    /// right after this) can treat the crossfade already underway the
+    /// same as the Lyrics Face being closed, rather than reading
+    /// `lyricsFace.isHidden`'s still-stale pre-animation value and
+    /// fighting it.
+    @discardableResult
+    private func applyCompactTier() -> Bool {
+        guard !isFullLayout else { return false }
         let isReduced = compactTier != .full
+        let isMinimalOrNarrower = compactTier == .minimal || compactTier == .bare
 
         compactSettingsButton.isHidden = isReduced
         compactMuteButton.isHidden = isReduced
@@ -676,6 +707,24 @@ final class OverlayCardView: DraggableBackgroundView {
 
         NSLayoutConstraint.deactivate(isReduced ? compactDragHandleFullTierConstraints : compactDragHandleReducedTierConstraints)
         NSLayoutConstraint.activate(isReduced ? compactDragHandleReducedTierConstraints : compactDragHandleFullTierConstraints)
+
+        compactPreviousButton.isHidden = isMinimalOrNarrower
+        // Overwrites `update(layout:)`'s own earlier `= isFullLayout`
+        // assignment (always `false` here, since this method already
+        // guarded on `!isFullLayout`) with the tier-aware final word.
+        lyricsButton.isHidden = isMinimalOrNarrower
+
+        // Called from `update(layout:)` *before* its own Lyrics/Settings-
+        // Face guard runs (see that call site's own comment on why), so
+        // `lyricsFace.isHidden` here still reflects reality at the exact
+        // moment a resize just crossed into `.minimal`/`.bare` — including
+        // if the Lyrics Face was open at that moment. There's no way to
+        // have newly opened it *while already* at one of these tiers,
+        // since `lyricsButton` is hidden throughout, so this only ever
+        // fires on that one crossing, never repeatedly.
+        guard isMinimalOrNarrower, !lyricsFace.isHidden else { return false }
+        showNowPlaying()
+        return true
     }
 
     /// Rotates the Disc's artwork to `degrees` — `DiscRotation`'s current
@@ -1183,12 +1232,14 @@ final class OverlayCardView: DraggableBackgroundView {
         fullControlsOverlay.alphaValue = 0
         fullFace.addSubview(fullControlsOverlay)
 
-        // Full Layout never needs to reference its own shuffle/repeat/
-        // share buttons again — throwaway instances, unlike Compact
-        // Layout's own, which `applyCompactTier()` hides at `.reduced`.
+        // Full Layout never needs to reference its own previous/shuffle/
+        // repeat/share buttons again — throwaway instances, unlike
+        // Compact Layout's own, which `applyCompactTier()` hides at some
+        // tier.
         let row = configureTransportRow(
             muteButton: fullMuteButton,
             volumeSlider: fullVolumeSlider,
+            previousButton: NSButton(),
             playPauseButton: fullPlayPauseButton,
             shuffleButton: NSButton(),
             repeatButton: NSButton(),
@@ -1206,8 +1257,8 @@ final class OverlayCardView: DraggableBackgroundView {
 
     /// Builds the shared transport row — mute, shuffle, previous, play/
     /// pause, next, repeat, share — wiring `muteButton`/`slider`/
-    /// `playPause`/`shuffleButton`/`repeatButton`/`shareButton` to their
-    /// shared action handlers. Shared by
+    /// `playPause`/`shuffleButton`/`previousButton`/`repeatButton`/
+    /// `shareButton` to their shared action handlers. Shared by
     /// `configureFullControlsOverlay`/`configureCompactTransportRow`: the
     /// same elements, arranged identically, in two separate instances
     /// since only one layout's own row is ever visible at once.
@@ -1215,18 +1266,20 @@ final class OverlayCardView: DraggableBackgroundView {
     /// row is configured first always leaves both mute buttons' glyphs
     /// correct, regardless of `init()`'s own call order.
     ///
-    /// `shuffleButton`/`repeatButton`/`shareButton` are taken as params
-    /// (like `muteButton`/`slider`/`playPause` already are), not built
-    /// internally the way `previousButton`/`nextButton` still are:
-    /// Compact Layout needs to keep its own references to hide them at
-    /// `.reduced`, so its caller passes real stored properties, while
-    /// Full Layout's own (which never hide) passes throwaway instances.
-    /// `previousButton`/`nextButton` stay internal-only — neither ever
+    /// Every button but `nextButton` is taken as a param (like
+    /// `muteButton`/`slider`/`playPause` already were), not built
+    /// internally: Compact Layout needs to keep its own reference to each
+    /// one `applyCompactTier()` hides at some tier — `shuffleButton`/
+    /// `repeatButton`/`shareButton` at `.reduced`, `previousButton` at
+    /// `.minimal` — so its caller passes real stored properties, while
+    /// Full Layout's own (which never hides any of them) passes
+    /// throwaway instances. `nextButton` stays internal-only — it never
     /// hides at any Compact tier, so nothing outside this method needs to
-    /// reach them again.
+    /// reach it again.
     private func configureTransportRow(
         muteButton: NSButton,
         volumeSlider slider: NSSlider,
+        previousButton: NSButton,
         playPauseButton playPause: NSButton,
         shuffleButton: NSButton,
         repeatButton: NSButton,
@@ -1253,7 +1306,10 @@ final class OverlayCardView: DraggableBackgroundView {
         shuffleButton.target = self
         shuffleButton.action = #selector(shuffleTapped)
 
-        let previousButton = transportButton(symbolName: "backward.fill", action: #selector(previousTapped))
+        previousButton.image = NSImage(systemSymbolName: "backward.fill", accessibilityDescription: nil)
+        styleTransportButton(previousButton)
+        previousButton.target = self
+        previousButton.action = #selector(previousTapped)
 
         playPause.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: "Play/Pause")
         styleTransportButton(playPause)
@@ -1512,6 +1568,7 @@ final class OverlayCardView: DraggableBackgroundView {
         let row = configureTransportRow(
             muteButton: compactMuteButton,
             volumeSlider: volumeSlider,
+            previousButton: compactPreviousButton,
             playPauseButton: playPauseButton,
             shuffleButton: compactShuffleButton,
             repeatButton: compactRepeatButton,

@@ -43,12 +43,19 @@ import QuartzCore
 final class OverlayCardView: DraggableBackgroundView {
     /// The Overlay's size before any resize has ever been remembered —
     /// also `OverlayWindow`'s minimum resizable size, since it's the
-    /// smallest proven-usable Compact Layout. Matches
-    /// `OverlayLayout.fullTierMinimumWidth` — the width `.full` tier's own
-    /// chrome and transport row actually need, confirmed live. A narrower
-    /// floor is a later ticket's concern, once `.reduced`/`.minimal`/
-    /// `.bare` tiers exist to actually render at it.
-    static let defaultSize = NSSize(width: 280, height: 96)
+    /// smallest proven-usable Compact Layout: below
+    /// `OverlayLayout.reducedTierMinimumWidth` and
+    /// `OverlayLayout.minimalTierMinimumHeight` both, so `.bare` — the
+    /// narrowest tier ADR-0010 describes — is an actually reachable state
+    /// rather than dead code. Reaching it required `.bare`'s own single-
+    /// row reflow (`compactTransportRowInlineConstraints`): the stacked
+    /// arrangement every other tier uses genuinely can't fit the fixed
+    /// `discSize`-tall thumbnail above a second row within heights this
+    /// small, confirmed by tracing the real geometry, not just by the
+    /// absence of a logged Auto Layout conflict (which pure visual
+    /// overlap between two independently-satisfiable constraint groups
+    /// never produces).
+    static let defaultSize = NSSize(width: 140, height: 48)
 
     /// A genuine, constant ceiling on how wide Compact Layout's title/
     /// artist row is ever allowed to demand — matches
@@ -286,6 +293,30 @@ final class OverlayCardView: DraggableBackgroundView {
     /// `.bare`), alongside the lyrics button. Passed into
     /// `configureTransportRow` for the same reason those three are.
     private let compactPreviousButton = NSButton()
+
+    /// The thumbnail-and-title/artist row — a stored property (not a
+    /// `configureCompactFace`-local variable) so `configureCompactTransportRow`
+    /// (built afterward) can position `compactTransportRow` relative to
+    /// it at the `.bare` tier, where the two sit side by side in one row
+    /// instead of `compactTransportRow` stacked beneath it.
+    private let compactThumbnailTextRow = NSStackView()
+
+    /// Two position states `applyCompactTier()` swaps `compactTransportRow`
+    /// between — built once in `configureCompactTransportRow`, the same
+    /// activate/deactivate pattern `compactDragHandleFullTierConstraints`/
+    /// `...ReducedTierConstraints` already use. `.reduced`/`.minimal` use
+    /// `compactTransportRowStackedConstraints` (centered beneath
+    /// `compactThumbnailTextRow`, spanning the full width) — `.bare` uses
+    /// `compactTransportRowInlineConstraints` (beside it instead, both in
+    /// one row): stacking two rows vertically needs more height than
+    /// `.bare`'s own tiny sizes actually have to give (confirmed by
+    /// tracing the real geometry — the fixed `discSize`-tall thumbnail
+    /// alone needs more headroom than `.bare`'s heights leave once a
+    /// second row is stacked beneath it), while sitting side by side
+    /// needs only as much height as the taller of the two, which the
+    /// thumbnail's own fixed size already comfortably provides.
+    private var compactTransportRowStackedConstraints: [NSLayoutConstraint] = []
+    private var compactTransportRowInlineConstraints: [NSLayoutConstraint] = []
 
     /// The `CompactTier` last resolved for the Overlay's current size —
     /// `.full` until the first real `update(layout:)` call, matching
@@ -727,6 +758,16 @@ final class OverlayCardView: DraggableBackgroundView {
         // alpha to, so no change is needed there.
         compactChromeBar.isHidden = isBare
 
+        // `.bare` reflows into a single row — thumbnail, title, play/next
+        // side by side — dropping the artist line and moving
+        // `compactTransportRow` beside `compactThumbnailTextRow` instead
+        // of stacking it beneath: see `compactTransportRowStackedConstraints`'s
+        // own doc comment for why the stacked arrangement every other
+        // tier uses can't fit within `.bare`'s own tiny heights.
+        artistLabel.isHidden = isBare
+        NSLayoutConstraint.deactivate(isBare ? compactTransportRowStackedConstraints : compactTransportRowInlineConstraints)
+        NSLayoutConstraint.activate(isBare ? compactTransportRowInlineConstraints : compactTransportRowStackedConstraints)
+
         // Called from `update(layout:)` *before* its own Lyrics/Settings-
         // Face guard runs (see that call site's own comment on why), so
         // `lyricsFace.isHidden` here still reflects reality at the exact
@@ -956,7 +997,12 @@ final class OverlayCardView: DraggableBackgroundView {
         textStack.alignment = .leading
         textStack.spacing = 2
 
-        let row = NSStackView(views: [discImageView, textStack])
+        // A stored property, not a local variable: `configureCompactTransportRow`
+        // (built afterward) needs to position `compactTransportRow`
+        // relative to it at the `.bare` tier, where the two sit side by
+        // side in one row instead of stacked.
+        let row = compactThumbnailTextRow
+        row.setViews([discImageView, textStack], in: .leading)
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 10
@@ -1598,10 +1644,28 @@ final class OverlayCardView: DraggableBackgroundView {
             row.trailingAnchor.constraint(equalTo: compactTransportRow.trailingAnchor),
             row.topAnchor.constraint(equalTo: compactTransportRow.topAnchor),
             row.bottomAnchor.constraint(equalTo: compactTransportRow.bottomAnchor),
+        ])
 
+        // See `compactTransportRowStackedConstraints`'s own doc comment
+        // for why `.bare` needs the alternate, inline position instead.
+        compactTransportRowStackedConstraints = [
             compactTransportRow.centerXAnchor.constraint(equalTo: compactFace.centerXAnchor),
             compactTransportRow.bottomAnchor.constraint(equalTo: compactFace.bottomAnchor, constant: -8),
-        ])
+        ]
+        compactTransportRowInlineConstraints = [
+            compactTransportRow.trailingAnchor.constraint(equalTo: compactFace.trailingAnchor, constant: -16),
+            compactTransportRow.centerYAnchor.constraint(equalTo: compactThumbnailTextRow.centerYAnchor),
+            // `compactThumbnailTextRow`'s own existing trailing cap (in
+            // `configureCompactFace`) only truncates before reaching
+            // `lyricsButton` — narrower than `compactTransportRow` (play
+            // and next together) now sitting in roughly that same trailing
+            // area at this tier. Without this, a long title could
+            // truncate assuming only the narrower (and, at `.bare`,
+            // already-hidden) lyrics icon needs avoiding, and still
+            // overlap the wider row that's actually visible here.
+            compactThumbnailTextRow.trailingAnchor.constraint(lessThanOrEqualTo: compactTransportRow.leadingAnchor, constant: -8),
+        ]
+        NSLayoutConstraint.activate(compactTransportRowStackedConstraints)
     }
 
     private func transportButton(symbolName: String, action: Selector) -> NSButton {

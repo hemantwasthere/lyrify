@@ -73,7 +73,7 @@ final class OverlayController {
     /// it) so `refreshLyricsDisplay` knows how many lines to ask
     /// `LyricsWindow` for without `OverlayCardView` exposing its own
     /// private `lyricsFace`.
-    private var currentLayout: OverlayLayout = .compact
+    private var currentLayout: OverlayLayout = .compact(.full)
 
     /// How many lines `refreshLyricsDisplay` asks `LyricsWindow` to
     /// resolve — Full Layout's own resolved `LyricsScale`, or Compact

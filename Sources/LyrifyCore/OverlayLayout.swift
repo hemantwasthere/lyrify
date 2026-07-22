@@ -1,10 +1,11 @@
 import CoreGraphics
 
 /// Resolves which layout the Overlay's current size calls for — Compact
-/// Layout (a small thumbnail-and-text bar) below a size threshold, Full
-/// Layout (Spotify Mini Player–style artwork, seek bar, and chrome) at or
-/// above it — and, for Full Layout, how many Lyrics Face lines and what
-/// font size that height affords.
+/// Layout (a thumbnail-and-text bar, itself further resolved into a
+/// `CompactTier` by width) below a size threshold, Full Layout (Spotify
+/// Mini Player–style artwork, seek bar, and chrome) at or above it — and,
+/// for Full Layout, how many Lyrics Face lines and what font size that
+/// height affords.
 ///
 /// Expands the retired `LyricsViewScale`: its old height-to-scale formula
 /// reappears unchanged as Full Layout's own scaling, just anchored at a
@@ -14,8 +15,19 @@ import CoreGraphics
 /// transport row, and a top chrome bar besides — a taller, independent
 /// minimum, tuned separately from the scaling curve it happens to share.
 public enum OverlayLayout: Equatable, Sendable {
-    case compact
+    case compact(CompactTier)
     case full(LyricsScale)
+
+    /// Compact Layout's own internal width tiers, widest to narrowest: how
+    /// much chrome and how many transport controls fit narrows in steps as
+    /// the Overlay gets narrower, rather than one fixed control set at
+    /// every width (ADR-0010).
+    public enum CompactTier: Equatable, Sendable {
+        case full
+        case reduced
+        case minimal
+        case bare
+    }
 
     public struct LyricsScale: Equatable, Sendable {
         public let lineCount: Int
@@ -26,6 +38,23 @@ public enum OverlayLayout: Equatable, Sendable {
             self.fontSize = fontSize
         }
     }
+
+    /// At or above this width, Compact Layout resolves its widest tier,
+    /// `.full` — the full chrome bar and transport row, same control set
+    /// Full Layout itself shows.
+    public static let fullTierMinimumWidth: CGFloat = 220
+
+    /// At or above this width (but below `fullTierMinimumWidth`), Compact
+    /// Layout resolves `.reduced` — the settings icon drops, the drag grip
+    /// relocates to a corner, and mute/shuffle/repeat/share drop from the
+    /// transport row.
+    public static let reducedTierMinimumWidth: CGFloat = 160
+
+    /// Below `reducedTierMinimumWidth`, Compact Layout resolves `.minimal`
+    /// at or above this height (lyrics button and previous drop, leaving
+    /// play/next), or `.bare` below it (the hide dot and drag grip drop
+    /// too — reached only when height, not just width, is very short).
+    public static let minimalTierMinimumHeight: CGFloat = 56
 
     /// Below this height, Compact Layout; at or above it, Full Layout.
     /// Set high enough that Full Layout's own structural minimum — its
@@ -61,8 +90,17 @@ public enum OverlayLayout: Equatable, Sendable {
     private static let fontSizeStepPerLine: CGFloat = 1.5
 
     public static func resolve(size: CGSize) -> OverlayLayout {
-        guard size.height >= thresholdHeight else { return .compact }
+        guard size.height >= thresholdHeight else { return .compact(compactTier(for: size)) }
+        return resolveFull(size: size)
+    }
 
+    private static func compactTier(for size: CGSize) -> CompactTier {
+        if size.width >= fullTierMinimumWidth { return .full }
+        if size.width >= reducedTierMinimumWidth { return .reduced }
+        return size.height >= minimalTierMinimumHeight ? .minimal : .bare
+    }
+
+    private static func resolveFull(size: CGSize) -> OverlayLayout {
         let extraHeight = size.height - thresholdHeight
         let extraLines = Int(extraHeight / pointsPerLine)
 

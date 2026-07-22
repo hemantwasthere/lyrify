@@ -27,11 +27,93 @@ struct OverlayLayoutTests {
         return scale
     }
 
-    @Test("below the threshold height resolves Compact Layout")
-    func belowThreshold() {
-        let size = CGSize(width: width, height: OverlayLayout.thresholdHeight - 1)
+    /// Resolves `width`/`height` and unwraps the Compact Layout tier,
+    /// failing the test if Full was resolved instead — mirrors
+    /// `resolveFull(height:)` for the Compact-tier scenarios below.
+    private func resolveCompact(width: CGFloat, height: CGFloat, sourceLocation: SourceLocation = #_sourceLocation) -> OverlayLayout.CompactTier? {
+        guard case .compact(let tier) = OverlayLayout.resolve(size: CGSize(width: width, height: height)) else {
+            Issue.record("expected Compact Layout", sourceLocation: sourceLocation)
+            return nil
+        }
+        return tier
+    }
 
-        #expect(OverlayLayout.resolve(size: size) == .compact)
+    @Test("at or above the full tier's minimum width resolves Compact Layout's full tier")
+    func compactFullTier() {
+        #expect(resolveCompact(width: OverlayLayout.fullTierMinimumWidth, height: OverlayLayout.thresholdHeight - 1) == .full)
+    }
+
+    @Test("just below the full tier's minimum width resolves the reduced tier")
+    func compactReducedTier() {
+        #expect(resolveCompact(width: OverlayLayout.fullTierMinimumWidth - 1, height: OverlayLayout.thresholdHeight - 1) == .reduced)
+    }
+
+    @Test("just below the reduced tier's minimum width, at an ordinary height, resolves the minimal tier")
+    func compactMinimalTier() {
+        #expect(resolveCompact(width: OverlayLayout.reducedTierMinimumWidth - 1, height: OverlayLayout.thresholdHeight - 1) == .minimal)
+    }
+
+    @Test("narrow and very short resolves the bare tier")
+    func compactBareTier() {
+        #expect(resolveCompact(width: OverlayLayout.reducedTierMinimumWidth - 1, height: OverlayLayout.minimalTierMinimumHeight - 1) == .bare)
+    }
+
+    @Test("exactly at the reduced tier's minimum width resolves the reduced tier, not the minimal tier")
+    func reducedTierBoundary() {
+        #expect(resolveCompact(width: OverlayLayout.reducedTierMinimumWidth, height: OverlayLayout.thresholdHeight - 1) == .reduced)
+    }
+
+    @Test("exactly at the minimal tier's minimum height resolves the minimal tier, not the bare tier")
+    func minimalTierBoundary() {
+        #expect(resolveCompact(width: OverlayLayout.reducedTierMinimumWidth - 1, height: OverlayLayout.minimalTierMinimumHeight) == .minimal)
+    }
+
+    @Test("height still gates Compact vs. Full independent of width")
+    func heightGatesIndependentOfWidth() {
+        let narrowAtThreshold = CGSize(width: 1, height: OverlayLayout.thresholdHeight)
+        let wideBelowThreshold = CGSize(width: 100_000, height: OverlayLayout.thresholdHeight - 1)
+
+        guard case .full = OverlayLayout.resolve(size: narrowAtThreshold) else {
+            Issue.record("expected Full Layout for a narrow width at the threshold height")
+            return
+        }
+        guard case .compact = OverlayLayout.resolve(size: wideBelowThreshold) else {
+            Issue.record("expected Compact Layout for a wide width below the threshold height")
+            return
+        }
+    }
+
+    @Test("Compact Layout's tier only ever gets richer as width grows, never poorer, for a fixed height")
+    func compactTierMonotonic() {
+        // A tier's index in this list is its "richness rank" — later is
+        // richer. Independent of `OverlayLayout`'s own case order, so this
+        // doesn't just restate the production code's own ordering.
+        let richnessRank: [OverlayLayout.CompactTier] = [.bare, .minimal, .reduced, .full]
+        var previousRank: Int?
+
+        for width in stride(from: CGFloat(1), through: OverlayLayout.fullTierMinimumWidth + 40, by: 10) {
+            let size = CGSize(width: width, height: OverlayLayout.thresholdHeight - 1)
+            guard case .compact(let tier) = OverlayLayout.resolve(size: size) else {
+                Issue.record("expected Compact Layout below the threshold height")
+                return
+            }
+            guard let rank = richnessRank.firstIndex(of: tier) else {
+                Issue.record("unranked tier \(tier)")
+                return
+            }
+
+            if let previousRank {
+                #expect(rank >= previousRank)
+            }
+            previousRank = rank
+        }
+    }
+
+    @Test("extreme sizes resolve to a defined tier rather than crashing or falling through")
+    func extremeSizes() {
+        #expect(resolveCompact(width: 0, height: 0) == .bare)
+        #expect(resolveCompact(width: -100, height: -100) == .bare)
+        #expect(resolveCompact(width: 1_000_000, height: OverlayLayout.thresholdHeight - 1) == .full)
     }
 
     @Test("exactly at the threshold height resolves Full Layout")

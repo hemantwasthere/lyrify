@@ -677,8 +677,12 @@ final class OverlayCardView: DraggableBackgroundView {
     /// lyrics button and previous, leaving just play/next — and, if the
     /// Lyrics Face happened to be open when a resize crossed into
     /// `.minimal`, returns to the Now Playing Face, since there's no
-    /// longer a lyrics button to have reached it from. A no-op for Full
-    /// Layout, which never narrows.
+    /// longer a lyrics button to have reached it from. `.bare` narrows
+    /// once more still, hiding the hide dot and drag grip entirely —
+    /// dragging the Overlay by its body keeps working regardless, since
+    /// that's `DraggableBackgroundView`'s own card-wide behavior, never
+    /// contingent on the drag grip glyph actually being visible. A no-op
+    /// for Full Layout, which never narrows.
     ///
     /// Returns whether it just triggered that Lyrics-Face dismissal, so
     /// `update(layout:)`'s own Lyrics/Settings-Face guard (which runs
@@ -691,6 +695,7 @@ final class OverlayCardView: DraggableBackgroundView {
         guard !isFullLayout else { return false }
         let isReduced = compactTier != .full
         let isMinimalOrNarrower = compactTier == .minimal || compactTier == .bare
+        let isBare = compactTier == .bare
 
         compactSettingsButton.isHidden = isReduced
         compactMuteButton.isHidden = isReduced
@@ -713,6 +718,14 @@ final class OverlayCardView: DraggableBackgroundView {
         // assignment (always `false` here, since this method already
         // guarded on `!isFullLayout`) with the tier-aware final word.
         lyricsButton.isHidden = isMinimalOrNarrower
+
+        // `.bare` hides the whole bar, not just its own hide
+        // dot/drag grip individually — `compactSettingsButton` inside it
+        // is already hidden from `isReduced` above, so nothing would be
+        // left to show regardless. A hidden view never reveals on hover
+        // no matter what `mouseEntered`/`mouseExited` later animate its
+        // alpha to, so no change is needed there.
+        compactChromeBar.isHidden = isBare
 
         // Called from `update(layout:)` *before* its own Lyrics/Settings-
         // Face guard runs (see that call site's own comment on why), so

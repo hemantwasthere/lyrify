@@ -227,12 +227,6 @@ final class OverlayCardView: DraggableBackgroundView {
     /// for dragging.
     private let resizeHandleImageView = PassthroughImageView()
 
-    /// A third, nested tracking area scoped to `resizeHandleImageView`'s
-    /// own frame — swaps the cursor on enter/exit, independent of the
-    /// general hover reveal and `muteHoverTrackingArea`, the same way
-    /// that one is independent of the card-wide `trackingArea`.
-    private var resizeHandleTrackingArea: NSTrackingArea?
-
     /// Full Layout's hover-revealed top chrome bar: the real system close
     /// button (ADR-0012), drag-handle indicator, and settings icon.
     private let fullTopChromeBar = NSView()
@@ -476,23 +470,13 @@ final class OverlayCardView: DraggableBackgroundView {
         addTrackingArea(area)
         trackingArea = area
 
-        if let resizeHandleTrackingArea {
-            removeTrackingArea(resizeHandleTrackingArea)
-        }
-        // `resizeHandleImageView` is a permanent sibling of `self` — never
-        // detached the way `fullFace`'s own content is, just possibly not
-        // laid out yet on the very first pass.
-        if !resizeHandleImageView.bounds.isEmpty {
-            let resizeHandleFrame = convert(resizeHandleImageView.bounds, from: resizeHandleImageView)
-            let resizeArea = NSTrackingArea(
-                rect: resizeHandleFrame,
-                options: [.mouseEnteredAndExited, .activeAlways],
-                owner: self,
-                userInfo: nil
-            )
-            addTrackingArea(resizeArea)
-            resizeHandleTrackingArea = resizeArea
-        }
+        // The resize-handle glyph's own cursor swap is handled by
+        // `resetCursorRects()`/`addCursorRect(_:cursor:)` instead of a
+        // tracking area — see that method's own doc comment for why.
+        // Its rect moves every time this card resizes, exactly the moment
+        // `updateTrackingAreas()` itself runs, so this is the right place
+        // to ask AppKit to re-evaluate it too.
+        window?.invalidateCursorRects(for: self)
 
         if let muteHoverTrackingArea {
             removeTrackingArea(muteHoverTrackingArea)
@@ -538,23 +522,13 @@ final class OverlayCardView: DraggableBackgroundView {
     /// Compact and Full Layout each reveal their own chrome bar and
     /// transport row together, on the same hover — identical shapes, two
     /// instances — alongside the shared resize-handle glyph. The mute
-    /// hover zone and the resize-handle zone are each nested independently
-    /// of that reveal and of each other: entering/exiting the mute zone
-    /// only ever reveals or hides whichever of `fullVolumeSlider`/
-    /// `volumeSlider` belongs to the current layout; entering/exiting the
-    /// resize-handle zone only ever swaps the cursor.
+    /// hover zone is nested independently of that reveal: entering/exiting
+    /// the mute zone only ever reveals or hides whichever of
+    /// `fullVolumeSlider`/`volumeSlider` belongs to the current layout. The
+    /// resize-handle glyph's own cursor swap isn't handled here at all —
+    /// see `resetCursorRects()`'s own doc comment for why — only its
+    /// alpha, alongside the rest of the card-wide reveal below.
     override func mouseEntered(with event: NSEvent) {
-        if event.trackingArea === resizeHandleTrackingArea {
-            // `.set()`, not `.push()`/`.pop()`: this panel can be hidden
-            // (the hide button, or a resize crossing a layout boundary)
-            // without `mouseExited` necessarily firing first, and a stack
-            // imbalance from a missed `.pop()` would compound across
-            // repeated hovers. `.set()` only ever affects the current
-            // cursor directly, so a missed exit self-corrects on the next
-            // successful one instead of accumulating.
-            Self.resizeCursor.set()
-            return
-        }
         if event.trackingArea === muteHoverTrackingArea {
             revealVolumeSlider(true)
             return
@@ -570,10 +544,6 @@ final class OverlayCardView: DraggableBackgroundView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        if event.trackingArea === resizeHandleTrackingArea {
-            NSCursor.arrow.set()
-            return
-        }
         if event.trackingArea === muteHoverTrackingArea {
             // Ignored mid-drag — a fast drag gesture can momentarily carry
             // the cursor outside the hover zone's own rect, and hiding the
@@ -590,6 +560,28 @@ final class OverlayCardView: DraggableBackgroundView {
             compactChromeBar.animator().alphaValue = 0
             compactTransportRow.animator().alphaValue = 0
         }
+    }
+
+    /// Registers the resize-handle glyph's own cursor rect — AppKit swaps
+    /// to `Self.resizeCursor` purely by the mouse's current position
+    /// against this rect, and restores whatever cursor was active before
+    /// on its own once the mouse leaves it, with no enter/exit event of
+    /// this view's own involved either way. Deliberately not a
+    /// `mouseEntered`/`mouseExited` tracking area the way the rest of this
+    /// view's hover behavior is: this glyph's rect moves on every single
+    /// frame of a live resize drag, and a tracking area recreated (removed
+    /// then re-added) under a cursor that's already sitting inside it
+    /// doesn't get a synthetic enter event — AppKit only fires those on
+    /// genuine boundary-crossing motion, not retroactively for a freshly
+    /// rebuilt area — which is exactly why the old approach only swapped
+    /// the cursor intermittently. Cursor rects have no such gap: AppKit
+    /// re-evaluates them fresh, by position, every time they're
+    /// invalidated (`updateTrackingAreas()` does that on this glyph's
+    /// behalf, since both need re-evaluating at the same geometry-driven
+    /// cadence).
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(resizeHandleImageView.frame, cursor: Self.resizeCursor)
     }
 
     /// Fades whichever of `fullVolumeSlider`/`volumeSlider` belongs to the

@@ -68,13 +68,31 @@ final class OverlayCardView: DraggableBackgroundView {
     /// own* width is circular and resolves by growing the window to fit
     /// the untruncated title instead of truncating it. A cap against a
     /// plain constant breaks that circularity outright.
+    ///
+    /// This only ever actually binds at (or past) the Overlay's true
+    /// maximum width — at any narrower width, the row's own other
+    /// constraint (its trailing edge capped to the lyrics button's
+    /// leading edge) is already tighter, so nothing here truncates a
+    /// title/artist pair that would otherwise fit the Overlay's *current*
+    /// size. That guarantee depends on the window never actually
+    /// exceeding `maximumSize` in the first place — see
+    /// `OverlayController.clamped(_:)`, which is what makes that true even
+    /// for a stale remembered size from a launch before that ceiling was
+    /// this low.
     private static let maximumRowWidth: CGFloat = 320 - 28
 
-    /// Compact Layout's thumbnail is a small square, not the circular Disc
-    /// the pre-resizable widget used — matching Spotify's own Mini Player,
-    /// which ADR-0009 names as the concrete reference for this redesign.
     static let discSize: CGFloat = 40
-    private static let discCornerRadius: CGFloat = 8
+
+    /// A full circle (half of `discSize`), not the shallow rounded square
+    /// ADR-0009 gave Compact Layout's thumbnail to match Spotify's own
+    /// static one — reopened by ADR-0014: this thumbnail keeps spinning
+    /// while a Track plays (`update(rotationDegrees:)`'s own `CATransform3D`
+    /// rotates its whole layer, mask included), and a rotating square
+    /// visibly wobbles as its corners sweep round, however gently rounded.
+    /// A circle is rotationally symmetric, so spinning it looks identical
+    /// at every angle — Full Layout's own artwork square is unaffected, it
+    /// never spins.
+    private static let discCornerRadius: CGFloat = discSize / 2
 
     /// Not tied to the view's actual (now-variable) height — a fixed,
     /// reasonable radius for Compact Layout at any size. Full Layout's own
@@ -1050,7 +1068,7 @@ final class OverlayCardView: DraggableBackgroundView {
         discImageView.wantsLayer = true
         discImageView.layer?.cornerRadius = Self.discCornerRadius
         discImageView.layer?.masksToBounds = true
-        // Fills the disc exactly — the rounded-square mask above clips
+        // Fills the disc exactly — the circular mask above clips
         // whatever doesn't fit.
         discImageView.image = OverlayArtworkPlaceholder.image(pointSize: 16)
         discImageView.contentTintColor = OverlayArtworkPlaceholder.tint
@@ -1084,12 +1102,21 @@ final class OverlayCardView: DraggableBackgroundView {
         row.alignment = .centerY
         row.spacing = 10
         row.translatesAutoresizingMaskIntoConstraints = false
+        // `discImageView` is the only fixed-size arranged subview here —
+        // `.fill` is what actually resizes `textStack` (the only flexible
+        // one) to absorb whatever space `row` itself grows into, rather
+        // than leaving it an unclaimed gap between the two.
+        row.distribution = .fill
 
         // Without this, a long real Track title's default (high)
         // compression resistance refuses to shrink below its own full
         // width, so `.byTruncatingTail` above never actually engages —
         // see `suppressIntrinsicSizeGrowthPressure`'s own comment.
         [titleLabel, artistLabel, textStack, row].forEach(suppressIntrinsicSizeGrowthPressure)
+        // Compression resistance alone doesn't make Auto Layout prefer
+        // growing past intrinsic size when more room exists — see
+        // `allowStretchingToFillAvailableSpace`'s own comment.
+        [titleLabel, artistLabel, textStack].forEach(allowStretchingToFillAvailableSpace)
 
         // The spot Spotify's own Mini Player gives its X/add-to-library
         // pair — always visible (not hover-gated) whenever Compact Layout
@@ -1113,6 +1140,12 @@ final class OverlayCardView: DraggableBackgroundView {
         compactFace.addSubview(row)
         addSubview(compactFace)
 
+        // See `preferredFill(_:upTo:constant:)`'s own comment — without
+        // this, `maximumRowWidth` and the required trailing constraint
+        // below only ever cap `row` *below* the lyrics button, never
+        // actually pull it toward that space.
+        let preferredRowTrailing = preferredFill(row.trailingAnchor, upTo: lyricsButton.leadingAnchor, constant: -8)
+
         NSLayoutConstraint.activate([
             discImageView.widthAnchor.constraint(equalToConstant: Self.discSize),
             discImageView.heightAnchor.constraint(equalToConstant: Self.discSize),
@@ -1122,6 +1155,7 @@ final class OverlayCardView: DraggableBackgroundView {
             // fixed inset — mirrors `fullTextStack`/`fullLyricsButton`'s
             // own relationship exactly.
             row.trailingAnchor.constraint(lessThanOrEqualTo: lyricsButton.leadingAnchor, constant: -8),
+            preferredRowTrailing,
             // See `maximumRowWidth`'s own comment: a real, non-circular
             // ceiling, independent of this view's own (window-derived)
             // width, is what actually makes a long title truncate instead
@@ -1160,6 +1194,35 @@ final class OverlayCardView: DraggableBackgroundView {
     private func suppressIntrinsicSizeGrowthPressure(_ view: NSView) {
         view.setContentCompressionResistancePriority(.init(1), for: .horizontal)
         view.setContentCompressionResistancePriority(.init(1), for: .vertical)
+    }
+
+    /// Lowers `view`'s own horizontal content hugging priority — the
+    /// companion `suppressIntrinsicSizeGrowthPressure` doesn't cover.
+    /// Compression resistance alone only ever permits a view to shrink
+    /// *below* its intrinsic size; it says nothing about whether Auto
+    /// Layout should let it grow *beyond* that size when more room is
+    /// genuinely on offer. Left at the default (high) hugging priority, a
+    /// short title/artist pair renders at its own intrinsic width and
+    /// stops there — verified by hand, this is exactly why a short title
+    /// alongside a longer artist name truncated the artist even with
+    /// plenty of the Overlay's actual current width still unused: nothing
+    /// told the row it was allowed to *prefer* the wider size a
+    /// low-priority constraint elsewhere now offers it.
+    private func allowStretchingToFillAvailableSpace(_ view: NSView) {
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    }
+
+    /// A low-priority *preferred* echo of an already-required `<=`
+    /// constraint between the same two anchors — paired with
+    /// `allowStretchingToFillAvailableSpace(_:)`, this is what actually
+    /// gives Auto Layout a reason to reach for an upper bound instead of
+    /// stopping at intrinsic size. Never wins over the required `<=`
+    /// constraint it mirrors, so that hard ceiling still holds — it only
+    /// ever pulls `anchor` up to whichever bound is currently tighter.
+    private func preferredFill(_ anchor: NSLayoutXAxisAnchor, upTo other: NSLayoutXAxisAnchor, constant: CGFloat) -> NSLayoutConstraint {
+        let constraint = anchor.constraint(equalTo: other, constant: constant)
+        constraint.priority = .defaultLow
+        return constraint
     }
 
     /// Full Layout's Now Playing content: a big square artwork area (a
@@ -1244,6 +1307,9 @@ final class OverlayCardView: DraggableBackgroundView {
         // `suppressIntrinsicSizeGrowthPressure`'s own comment for why.
         [fullArtworkBackgroundView, fullArtworkView, fullTitleLabel, fullArtistLabel, fullTextStack, elapsedLabel, remainingLabel, fullSeekSlider, seekRow]
             .forEach(suppressIntrinsicSizeGrowthPressure)
+        // See `allowStretchingToFillAvailableSpace`'s own comment — the
+        // same fix Compact Layout's own title/artist row needs.
+        [fullTitleLabel, fullArtistLabel, fullTextStack].forEach(allowStretchingToFillAvailableSpace)
 
         fullFace.translatesAutoresizingMaskIntoConstraints = false
         // Background added first, so it renders behind the sharp copy —
@@ -1291,6 +1357,12 @@ final class OverlayCardView: DraggableBackgroundView {
         )
         self.fullTopChromeBarTopConstraint = fullTopChromeBarTopConstraint
 
+        // See `preferredFill(_:upTo:constant:)`'s own comment — the same
+        // fix Compact Layout's own `row` needs.
+        let preferredFullTextStackTrailing = preferredFill(
+            fullTextStack.trailingAnchor, upTo: fullLyricsButton.leadingAnchor, constant: -8
+        )
+
         fullLayoutContentConstraints = [
             fullArtworkBackgroundView.leadingAnchor.constraint(equalTo: fullFace.leadingAnchor, constant: 16),
             fullArtworkBackgroundView.trailingAnchor.constraint(equalTo: fullFace.trailingAnchor, constant: -16),
@@ -1320,6 +1392,7 @@ final class OverlayCardView: DraggableBackgroundView {
 
             fullTextStack.leadingAnchor.constraint(equalTo: fullFace.leadingAnchor, constant: 16),
             fullTextStack.trailingAnchor.constraint(lessThanOrEqualTo: fullLyricsButton.leadingAnchor, constant: -8),
+            preferredFullTextStackTrailing,
             fullTextStack.centerYAnchor.constraint(equalTo: fullLyricsButton.centerYAnchor),
 
             // Overlaid across the whole square — `fullArtworkBackgroundView`,

@@ -91,7 +91,7 @@ The Now Playing Face's rendering at larger sizes (at or above `OverlayLayout.thr
 _Avoid_: Expanded (retired term — see ADR-0008)
 
 **Disc**:
-The small square of the current Track's album art shown on the Now Playing Face, spinning while the Track plays and freezing at its current angle when paused, resuming from that angle on play. A circle before ADR-0009's Mini Player–style redesign; the name persists for the behavior (the spin, freeze, and resume), not the shape.
+The small circle of the current Track's album art shown on the Now Playing Face, spinning while the Track plays and freezing at its current angle when paused, resuming from that angle on play. Briefly a rounded square under ADR-0009's Mini Player–style redesign; ADR-0014 made it a circle again, since a rotating shape with corners visibly wobbles as it spins and a circle doesn't. Full Layout's own artwork square is unrelated — it never spins, and keeps the square shape ADR-0009 gave it.
 _Avoid_: Bubble, sphere
 
 **Lyrics Face**:

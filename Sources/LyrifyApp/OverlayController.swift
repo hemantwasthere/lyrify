@@ -143,7 +143,7 @@ final class OverlayController {
         let overlayView = OverlayCardView()
         self.overlayView = overlayView
 
-        let initialSize = sizePreference.size ?? OverlayCardView.defaultSize
+        let initialSize = Self.clamped(sizePreference.size ?? OverlayCardView.defaultSize)
 
         // A remembered position can go stale between launches — a display
         // disconnected, a screen arrangement changed — and must never leave
@@ -475,6 +475,22 @@ final class OverlayController {
         return NSPoint(
             x: screen.visibleFrame.maxX - size.width - defaultTrailingInset,
             y: screen.visibleFrame.maxY - size.height - defaultTopInset
+        )
+    }
+
+    /// A remembered size can go stale between launches the same way a
+    /// remembered origin can (`OverlayOrigin.resolve`'s own concern) — an
+    /// older app version's own `maximumSize`/`minimumSize` were once wider,
+    /// or the size was never valid to begin with. `NSWindow.setFrame(_:display:)`
+    /// only enforces `minSize`/`maxSize` during an interactive drag-resize,
+    /// never for a programmatic call like this one's — an unclamped stale
+    /// size here would silently launch the window wider or narrower than
+    /// this controller's own documented bounds, which `OverlayCardView`'s
+    /// own layout (`maximumRowWidth` in particular) assumes never happens.
+    private static func clamped(_ size: NSSize) -> NSSize {
+        NSSize(
+            width: min(max(size.width, minimumSize.width), maximumSize.width),
+            height: min(max(size.height, minimumSize.height), maximumSize.height)
         )
     }
 }

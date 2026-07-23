@@ -79,8 +79,12 @@ The Overlay's resting face: a small spinning Disc of the current Track's album a
 _Avoid_: Minimized, collapsed (retired terms — see ADR-0008)
 
 **Compact Layout**:
-The Now Playing Face's rendering below Full Layout's size threshold: a thumbnail with the current Track's title and artist beside it, and controls revealed on hover. Internally width-tiered — how much chrome and how many transport controls are shown narrows in steps as the Overlay gets narrower, rather than one fixed control set at every width (ADR-0010).
-_Avoid_: Minimized, collapsed (retired terms — see ADR-0008)
+The Now Playing Face's rendering below Full Layout's size threshold: a thumbnail with the current Track's title and artist beside it, and controls revealed on hover. Each control in its chrome and transport row disappears at its own independent Breakpoint as the Overlay narrows, continuously recomputed on every resize — not a small number of named tiers switched between as a whole (ADR-0013 retires ADR-0010's CompactTier).
+_Avoid_: Minimized, collapsed (retired terms — see ADR-0008); Tier, CompactTier (retired — see ADR-0013)
+
+**Breakpoint**:
+The width or height below which one specific control in Compact Layout's chrome or transport row disappears. Each control is resolved against its own Breakpoint independently and continuously as the Overlay resizes, with a small hysteresis buffer between its hide and reappear thresholds so holding a resize exactly on the boundary can't flicker it.
+_Avoid_: Tier (a Breakpoint governs one control; a tier bundled several together)
 
 **Full Layout**:
 The Now Playing Face's rendering at larger sizes (at or above `OverlayLayout.thresholdHeight`): a big square artwork area, an always-visible seek bar, and additional chrome — a hover-revealed top bar (hide, drag handle, settings) and transport row (mute, shuffle, previous, play/pause, next, repeat, share) overlaid on the artwork — styled after Spotify's own Mini Player.

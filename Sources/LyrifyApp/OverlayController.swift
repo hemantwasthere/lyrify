@@ -69,11 +69,13 @@ final class OverlayController {
     private var currentBlurredBackgroundImage: NSImage?
 
     /// The `OverlayLayout` last resolved for the Overlay's current size —
-    /// kept alongside `overlayView.update(layout:)` (never read back from
-    /// it) so `refreshLyricsDisplay` knows how many lines to ask
-    /// `LyricsWindow` for without `OverlayCardView` exposing its own
-    /// private `lyricsFace`.
-    private var currentLayout: OverlayLayout = .compact(.full)
+    /// kept alongside `overlayView.update(layout:)` so `refreshLyricsDisplay`
+    /// knows how many lines to ask `LyricsWindow` for without
+    /// `OverlayCardView` exposing its own private `lyricsFace`, and so
+    /// `sizeChanged()` can hand the next resolution its own previously-
+    /// visible Compact-Layout controls (`OverlayLayout.resolve`'s own
+    /// hysteresis needs that history).
+    private var currentLayout: OverlayLayout = .compact(OverlayLayout.CompactControl.allVisible)
 
     /// How many lines `refreshLyricsDisplay` asks `LyricsWindow` to
     /// resolve — Full Layout's own resolved `LyricsScale`, or Compact
@@ -241,7 +243,11 @@ final class OverlayController {
     private func sizeChanged() {
         let size = window.frame.size
         sizePreference.size = size
-        currentLayout = OverlayLayout.resolve(size: size)
+        let previousControls: Set<OverlayLayout.CompactControl>? = {
+            guard case .compact(let controls) = currentLayout else { return nil }
+            return controls
+        }()
+        currentLayout = OverlayLayout.resolve(size: size, previousControls: previousControls)
         overlayView.update(layout: currentLayout)
     }
 

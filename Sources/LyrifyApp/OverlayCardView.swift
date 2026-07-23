@@ -4,8 +4,8 @@ import QuartzCore
 
 /// The Overlay's one and only window content — the Now Playing face, shown
 /// as Compact Layout (a thumbnail beside the current Track's title and
-/// artist, at Compact Layout's own widest tier styled just like Full
-/// Layout: a hover-revealed top chrome bar and transport row of its own) or
+/// artist, at its most generous size styled just like Full Layout: a
+/// hover-revealed top chrome bar and transport row of its own) or
 /// Full Layout (a big square artwork area, an always-visible seek bar, and
 /// title/artist pinned at the bottom) as `OverlayLayout` resolves for the
 /// Overlay's current size — or the Lyrics face (`LyricsCardView`), toggled
@@ -43,15 +43,14 @@ import QuartzCore
 final class OverlayCardView: DraggableBackgroundView {
     /// The Overlay's size before any resize has ever been remembered —
     /// also `OverlayWindow`'s minimum resizable size, since it's the
-    /// smallest proven-usable Compact Layout: below
-    /// `OverlayLayout.reducedTierMinimumWidth` and
-    /// `OverlayLayout.minimalTierMinimumHeight` both, so `.bare` — the
-    /// narrowest tier ADR-0010 describes — is an actually reachable state
-    /// rather than dead code. Reaching it required `.bare`'s own single-
-    /// row reflow (`compactTransportRowInlineConstraints`): the stacked
-    /// arrangement every other tier uses genuinely can't fit the fixed
-    /// `discSize`-tall thumbnail above a second row within heights this
-    /// small, confirmed by tracing the real geometry, not just by the
+    /// smallest proven-usable Compact Layout: below every one of
+    /// `OverlayLayout.breakpoints`' own thresholds, so the narrowest,
+    /// barest reflow (every optional control hidden) is an actually
+    /// reachable state rather than dead code. Reaching it required its own
+    /// single-row reflow (`compactTransportRowInlineConstraints`): the
+    /// stacked arrangement wider/taller sizes use genuinely can't fit the
+    /// fixed `discSize`-tall thumbnail above a second row within heights
+    /// this small, confirmed by tracing the real geometry, not just by the
     /// absence of a logged Auto Layout conflict (which pure visual
     /// overlap between two independently-satisfiable constraint groups
     /// never produces).
@@ -258,18 +257,18 @@ final class OverlayCardView: DraggableBackgroundView {
     private let compactTransportRow = NSView()
     private let compactMuteButton = NSButton()
 
-    /// Compact Layout's own drag-handle indicator — `.full` tier centers
-    /// it in `compactChromeBar`, matching Full Layout's own; `.reduced`
-    /// (and narrower) tiers relocate it to sit directly beside
-    /// `compactHideButton` instead, once the settings icon on the other
-    /// side of the bar is gone. Passed into `configureChromeBar` (which
+    /// Compact Layout's own drag-handle indicator — centered in
+    /// `compactChromeBar`, matching Full Layout's own, while the settings
+    /// button is visible; relocated to sit directly beside
+    /// `compactHideButton` instead once the settings button on the other
+    /// side of the bar is hidden. Passed into `configureChromeBar` (which
     /// otherwise builds and discards its own throwaway one for Full
     /// Layout's bar) so it can be referenced again afterward, the same
     /// pattern `configureTransportRow`'s own `muteButton`/`playPause`
     /// params already use.
     private let compactDragHandle = PassthroughImageView()
 
-    /// The two position states `applyCompactTier()` swaps
+    /// The two position states `applyCompactControls()` swaps
     /// `compactDragHandle` between — built once in
     /// `configureCompactChromeBar`. Unlike `fullLayoutContentConstraints`'s
     /// own plain on/off toggle, this is a swap between two mutually
@@ -278,56 +277,61 @@ final class OverlayCardView: DraggableBackgroundView {
     private var compactDragHandleReducedTierConstraints: [NSLayoutConstraint] = []
 
     /// Compact Layout's own shuffle/repeat/share buttons — three of the
-    /// transport-row elements `applyCompactTier()` hides at `.reduced`
-    /// (alongside `compactMuteButton`), unlike play/next, which stay at
-    /// every tier. Passed into `configureTransportRow` the same way
-    /// `compactMuteButton` already is, rather than built and discarded as
-    /// throwaway locals the way Full Layout's own (which never need
-    /// hiding) still are.
+    /// transport-row elements `applyCompactControls()` hides once each of
+    /// their own `OverlayLayout.Breakpoint`s is crossed (alongside
+    /// `compactMuteButton`), unlike play/next, which have no Breakpoint of
+    /// their own and stay visible at every size. Passed into
+    /// `configureTransportRow` the same way `compactMuteButton` already
+    /// is, rather than built and discarded as throwaway locals the way
+    /// Full Layout's own (which never need hiding) still are.
     private let compactShuffleButton = NSButton()
     private let compactRepeatButton = NSButton()
     private let compactShareButton = NSButton()
 
-    /// Compact Layout's own previous button — unlike shuffle/repeat/
-    /// share, it survives `.reduced` and only drops at `.minimal` (and
-    /// `.bare`), alongside the lyrics button. Passed into
-    /// `configureTransportRow` for the same reason those three are.
+    /// Compact Layout's own previous button — like the lyrics button,
+    /// hidden once its own `OverlayLayout.Breakpoint` is crossed. Passed
+    /// into `configureTransportRow` for the same reason shuffle/repeat/
+    /// share are.
     private let compactPreviousButton = NSButton()
 
     /// The thumbnail-and-title/artist row — a stored property (not a
     /// `configureCompactFace`-local variable) so `configureCompactTransportRow`
     /// (built afterward) can position `compactTransportRow` relative to
-    /// it at the `.bare` tier, where the two sit side by side in one row
-    /// instead of `compactTransportRow` stacked beneath it.
+    /// it once the Overlay is too short for the stacked arrangement, where
+    /// the two sit side by side in one row instead of `compactTransportRow`
+    /// stacked beneath it.
     private let compactThumbnailTextRow = NSStackView()
 
-    /// Two position states `applyCompactTier()` swaps `compactTransportRow`
-    /// between — built once in `configureCompactTransportRow`, the same
-    /// activate/deactivate pattern `compactDragHandleFullTierConstraints`/
-    /// `...ReducedTierConstraints` already use. `.reduced`/`.minimal` use
+    /// Two position states `applyCompactControls()` swaps
+    /// `compactTransportRow` between — built once in
+    /// `configureCompactTransportRow`, the same activate/deactivate
+    /// pattern `compactDragHandleFullTierConstraints`/
+    /// `...ReducedTierConstraints` already use.
     /// `compactTransportRowStackedConstraints` (centered beneath
-    /// `compactThumbnailTextRow`, spanning the full width) — `.bare` uses
-    /// `compactTransportRowInlineConstraints` (beside it instead, both in
-    /// one row): stacking two rows vertically needs more height than
-    /// `.bare`'s own tiny sizes actually have to give (confirmed by
-    /// tracing the real geometry — the fixed `discSize`-tall thumbnail
-    /// alone needs more headroom than `.bare`'s heights leave once a
-    /// second row is stacked beneath it), while sitting side by side
+    /// `compactThumbnailTextRow`, spanning the full width) is used at
+    /// ordinary heights — `compactTransportRowInlineConstraints` (beside
+    /// it instead, both in one row) once the Overlay gets very short:
+    /// stacking two rows vertically needs more height than those tiny
+    /// sizes actually have to give (confirmed by tracing the real
+    /// geometry — the fixed `discSize`-tall thumbnail alone needs more
+    /// headroom than those heights leave once a second row is stacked
+    /// beneath it), while sitting side by side
     /// needs only as much height as the taller of the two, which the
     /// thumbnail's own fixed size already comfortably provides.
     private var compactTransportRowStackedConstraints: [NSLayoutConstraint] = []
     private var compactTransportRowInlineConstraints: [NSLayoutConstraint] = []
 
-    /// The `CompactTier` last resolved for the Overlay's current size —
-    /// `.full` until the first real `update(layout:)` call, matching
-    /// `isFullLayout`'s own placeholder-before-first-resolution default.
-    /// Read by `applyCompactTier()`, which itself only ever runs while
+    /// The set of `OverlayLayout.CompactControl`s last resolved visible
+    /// for the Overlay's current size — every control until the first
+    /// real `update(layout:)` call, matching `isFullLayout`'s own
+    /// placeholder-before-first-resolution default. Read by
+    /// `applyCompactControls()`, which itself only ever runs while
     /// `!isFullLayout` — so a stale value left over from before a
     /// transition into Full Layout is never actually acted on, even
     /// though `update(layout:)` does still read (not act on) it every
     /// call, Full Layout resizes included, to detect the next real
-    /// Compact-tier change.
-    private var compactTier: OverlayLayout.CompactTier = .full
+    /// change in which controls are visible.
+    private var visibleCompactControls: Set<OverlayLayout.CompactControl> = OverlayLayout.CompactControl.allVisible
 
     private let lyricsFace = LyricsCardView()
     private let volumeSlider = NSSlider()
@@ -607,11 +611,11 @@ final class OverlayCardView: DraggableBackgroundView {
     /// to `.compact`, and those must all reach `lyricsFace` too.
     func update(layout: OverlayLayout) {
         let wasFullLayout = isFullLayout
-        let wasCompactTier = compactTier
+        let wasVisibleControls = visibleCompactControls
         switch layout {
-        case .compact(let tier):
+        case .compact(let controls):
             isFullLayout = false
-            compactTier = tier
+            visibleCompactControls = controls
             lyricsFace.updateScale(lineCount: LyricsCardView.defaultLineCount, fontSize: LyricsCardView.defaultFontSize)
         case .full(let scale):
             isFullLayout = true
@@ -619,14 +623,14 @@ final class OverlayCardView: DraggableBackgroundView {
         }
 
         // `sizeChanged()` calls this on every tick of a live resize drag,
-        // not just when it crosses the Compact/Full boundary (or, now,
-        // a Compact-tier boundary) — skip the work below unless one of
-        // those was actually crossed (or this is the first call), so a
-        // redundant activate/deactivate cycle on every tick can't itself
-        // perturb layout.
+        // not just when it crosses the Compact/Full boundary (or, now, a
+        // change in which Compact-Layout controls are visible) — skip the
+        // work below unless one of those was actually crossed (or this is
+        // the first call), so a redundant activate/deactivate cycle on
+        // every tick can't itself perturb layout.
         let layoutBoundaryCrossed = isFullLayout != wasFullLayout
-        let compactTierChanged = !isFullLayout && compactTier != wasCompactTier
-        guard layoutBoundaryCrossed || compactTierChanged || !didResolveInitialLayout else { return }
+        let compactControlsChanged = !isFullLayout && visibleCompactControls != wasVisibleControls
+        guard layoutBoundaryCrossed || compactControlsChanged || !didResolveInitialLayout else { return }
         didResolveInitialLayout = true
 
         // `fullFace` is added to (and removed from) the hierarchy here,
@@ -660,7 +664,8 @@ final class OverlayCardView: DraggableBackgroundView {
         // Run before the Lyrics/Settings-Face guard below, not after: that
         // guard's own early-return, whenever the Lyrics Face is still the
         // (pre-dismissal) active face, would otherwise skip this entirely
-        // — exactly the moment a tier change needs to react to. Returns
+        // — exactly the moment a change in visible controls needs to react
+        // to. Returns
         // whether it just triggered a dismissal back to Now Playing, so
         // the guard below can treat that the same as the Lyrics Face
         // already being closed, rather than fighting the crossfade it
@@ -669,7 +674,7 @@ final class OverlayCardView: DraggableBackgroundView {
         // `else` branch re-hiding both immediately after, based on
         // `lyricsFace.isHidden`'s still-stale pre-animation value, would
         // undo that in the same tick).
-        let dismissedLyricsFace = applyCompactTier()
+        let dismissedLyricsFace = applyCompactControls()
 
         guard (lyricsFace.isHidden || dismissedLyricsFace), settingsFace.isHidden else {
             // The Lyrics or Settings face is showing — nothing to reveal
@@ -698,22 +703,27 @@ final class OverlayCardView: DraggableBackgroundView {
         fullFace.isHidden = !isFullLayout
     }
 
-    /// Narrows Compact Layout's own chrome and transport row for
-    /// `compactTier`, relative to `.full`'s own full-featured rendering
-    /// (ADR-0010): `.reduced` (and narrower) hides the settings icon,
-    /// relocates the drag handle to sit beside the hide dot, and drops
-    /// mute/shuffle/repeat/share from the transport row; `.minimal` (and,
-    /// for now, `.bare` too, until its own narrower ticket gives it a
-    /// further-reduced treatment of its own) additionally drops the
-    /// lyrics button and previous, leaving just play/next — and, if the
-    /// Lyrics Face happened to be open when a resize crossed into
-    /// `.minimal`, returns to the Now Playing Face, since there's no
-    /// longer a lyrics button to have reached it from. `.bare` narrows
-    /// once more still, hiding the hide dot and drag grip entirely —
-    /// dragging the Overlay by its body keeps working regardless, since
-    /// that's `DraggableBackgroundView`'s own card-wide behavior, never
-    /// contingent on the drag grip glyph actually being visible. A no-op
-    /// for Full Layout, which never narrows.
+    /// Applies `visibleCompactControls` to Compact Layout's own chrome and
+    /// transport row, relative to `.full`'s own full-featured rendering
+    /// (ADR-0013): each control's own `isHidden` reads its own membership
+    /// in `visibleCompactControls` directly — there's no longer a bundled
+    /// tier deciding several of these together. The drag handle relocates
+    /// to sit beside the hide/close button whenever the settings button
+    /// isn't currently visible (freeing the far side of the bar it used to
+    /// share), independent of the drag handle's own visibility. If the
+    /// Lyrics Face happened to be open when a resize hid the lyrics
+    /// button, returns to the Now Playing Face, since there's no longer a
+    /// lyrics button to have reached it from. A no-op for Full Layout,
+    /// which never narrows.
+    ///
+    /// `hideButton` and `dragHandle` share the same height Breakpoint
+    /// (see `OverlayLayout.breakpoints`), so either's absence is used as
+    /// the "very short" signal that reflows the transport row into a
+    /// single inline row beside the thumbnail rather than stacked beneath
+    /// it — the stacked arrangement genuinely can't fit the fixed
+    /// `discSize`-tall thumbnail above a second row within heights that
+    /// short (see `compactTransportRowStackedConstraints`'s own doc
+    /// comment).
     ///
     /// Returns whether it just triggered that Lyrics-Face dismissal, so
     /// `update(layout:)`'s own Lyrics/Settings-Face guard (which runs
@@ -722,61 +732,57 @@ final class OverlayCardView: DraggableBackgroundView {
     /// `lyricsFace.isHidden`'s still-stale pre-animation value and
     /// fighting it.
     @discardableResult
-    private func applyCompactTier() -> Bool {
+    private func applyCompactControls() -> Bool {
         guard !isFullLayout else { return false }
-        let isReduced = compactTier != .full
-        let isMinimalOrNarrower = compactTier == .minimal || compactTier == .bare
-        let isBare = compactTier == .bare
 
-        compactSettingsButton.isHidden = isReduced
-        compactMuteButton.isHidden = isReduced
-        compactShuffleButton.isHidden = isReduced
-        compactRepeatButton.isHidden = isReduced
-        compactShareButton.isHidden = isReduced
+        func isVisible(_ control: OverlayLayout.CompactControl) -> Bool {
+            visibleCompactControls.contains(control)
+        }
+
+        compactSettingsButton.isHidden = !isVisible(.settingsButton)
+        compactMuteButton.isHidden = !isVisible(.muteButton)
+        compactShuffleButton.isHidden = !isVisible(.shuffleButton)
+        compactRepeatButton.isHidden = !isVisible(.repeatButton)
+        compactShareButton.isHidden = !isVisible(.shareButton)
         // Only ever force-hidden here, never force-shown: whether it's
-        // actually visible at `.full` is `revealVolumeSlider`'s own call,
+        // actually visible at rest is `revealVolumeSlider`'s own call,
         // driven by hovering `compactMuteButton` specifically — which no
-        // longer exists to hover at `.reduced`.
-        if isReduced {
+        // longer exists to hover once `muteButton` itself is hidden.
+        if !isVisible(.muteButton) {
             volumeSlider.isHidden = true
         }
 
-        NSLayoutConstraint.deactivate(isReduced ? compactDragHandleFullTierConstraints : compactDragHandleReducedTierConstraints)
-        NSLayoutConstraint.activate(isReduced ? compactDragHandleReducedTierConstraints : compactDragHandleFullTierConstraints)
+        let dragHandleAtCorner = !isVisible(.settingsButton)
+        NSLayoutConstraint.deactivate(dragHandleAtCorner ? compactDragHandleFullTierConstraints : compactDragHandleReducedTierConstraints)
+        NSLayoutConstraint.activate(dragHandleAtCorner ? compactDragHandleReducedTierConstraints : compactDragHandleFullTierConstraints)
 
-        compactPreviousButton.isHidden = isMinimalOrNarrower
+        compactHideButton.isHidden = !isVisible(.hideButton)
+        compactDragHandle.isHidden = !isVisible(.dragHandle)
+        compactPreviousButton.isHidden = !isVisible(.previousButton)
         // Overwrites `update(layout:)`'s own earlier `= isFullLayout`
         // assignment (always `false` here, since this method already
-        // guarded on `!isFullLayout`) with the tier-aware final word.
-        lyricsButton.isHidden = isMinimalOrNarrower
+        // guarded on `!isFullLayout`) with the Breakpoint-aware final word.
+        lyricsButton.isHidden = !isVisible(.lyricsButton)
 
-        // `.bare` hides the whole bar, not just its own hide
-        // dot/drag grip individually — `compactSettingsButton` inside it
-        // is already hidden from `isReduced` above, so nothing would be
-        // left to show regardless. A hidden view never reveals on hover
-        // no matter what `mouseEntered`/`mouseExited` later animate its
-        // alpha to, so no change is needed there.
-        compactChromeBar.isHidden = isBare
-
-        // `.bare` reflows into a single row — thumbnail, title, play/next
-        // side by side — dropping the artist line and moving
-        // `compactTransportRow` beside `compactThumbnailTextRow` instead
-        // of stacking it beneath: see `compactTransportRowStackedConstraints`'s
-        // own doc comment for why the stacked arrangement every other
-        // tier uses can't fit within `.bare`'s own tiny heights.
-        artistLabel.isHidden = isBare
-        NSLayoutConstraint.deactivate(isBare ? compactTransportRowStackedConstraints : compactTransportRowInlineConstraints)
-        NSLayoutConstraint.activate(isBare ? compactTransportRowInlineConstraints : compactTransportRowStackedConstraints)
+        // Reflows into a single row — thumbnail, title, play/next side by
+        // side — dropping the artist line and moving `compactTransportRow`
+        // beside `compactThumbnailTextRow` instead of stacking it beneath,
+        // once the Overlay is too short for the stacked arrangement (see
+        // this method's own doc comment).
+        let isVeryShort = !isVisible(.hideButton)
+        artistLabel.isHidden = isVeryShort
+        NSLayoutConstraint.deactivate(isVeryShort ? compactTransportRowStackedConstraints : compactTransportRowInlineConstraints)
+        NSLayoutConstraint.activate(isVeryShort ? compactTransportRowInlineConstraints : compactTransportRowStackedConstraints)
 
         // Called from `update(layout:)` *before* its own Lyrics/Settings-
         // Face guard runs (see that call site's own comment on why), so
         // `lyricsFace.isHidden` here still reflects reality at the exact
-        // moment a resize just crossed into `.minimal`/`.bare` — including
-        // if the Lyrics Face was open at that moment. There's no way to
-        // have newly opened it *while already* at one of these tiers,
-        // since `lyricsButton` is hidden throughout, so this only ever
-        // fires on that one crossing, never repeatedly.
-        guard isMinimalOrNarrower, !lyricsFace.isHidden else { return false }
+        // moment a resize just hid the lyrics button — including if the
+        // Lyrics Face was open at that moment. There's no way to have
+        // newly opened it *while already* hidden, since `lyricsButton`
+        // itself is hidden throughout, so this only ever fires on that one
+        // crossing, never repeatedly.
+        guard !isVisible(.lyricsButton), !lyricsFace.isHidden else { return false }
         showNowPlaying()
         return true
     }
@@ -999,8 +1005,8 @@ final class OverlayCardView: DraggableBackgroundView {
 
         // A stored property, not a local variable: `configureCompactTransportRow`
         // (built afterward) needs to position `compactTransportRow`
-        // relative to it at the `.bare` tier, where the two sit side by
-        // side in one row instead of stacked.
+        // relative to it once the Overlay is very short, where the two sit
+        // side by side in one row instead of stacked.
         let row = compactThumbnailTextRow
         row.setViews([discImageView, textStack], in: .leading)
         row.orientation = .horizontal
@@ -1293,8 +1299,8 @@ final class OverlayCardView: DraggableBackgroundView {
 
         // Full Layout never needs to reference its own previous/shuffle/
         // repeat/share buttons again — throwaway instances, unlike
-        // Compact Layout's own, which `applyCompactTier()` hides at some
-        // tier.
+        // Compact Layout's own, which `applyCompactControls()` hides once
+        // its own Breakpoint is crossed.
         let row = configureTransportRow(
             muteButton: fullMuteButton,
             volumeSlider: fullVolumeSlider,
@@ -1328,13 +1334,12 @@ final class OverlayCardView: DraggableBackgroundView {
     /// Every button but `nextButton` is taken as a param (like
     /// `muteButton`/`slider`/`playPause` already were), not built
     /// internally: Compact Layout needs to keep its own reference to each
-    /// one `applyCompactTier()` hides at some tier — `shuffleButton`/
-    /// `repeatButton`/`shareButton` at `.reduced`, `previousButton` at
-    /// `.minimal` — so its caller passes real stored properties, while
-    /// Full Layout's own (which never hides any of them) passes
-    /// throwaway instances. `nextButton` stays internal-only — it never
-    /// hides at any Compact tier, so nothing outside this method needs to
-    /// reach it again.
+    /// one `applyCompactControls()` hides once its own
+    /// `OverlayLayout.Breakpoint` is crossed — so its caller passes real
+    /// stored properties, while Full Layout's own (which never hides any
+    /// of them) passes throwaway instances. `nextButton` stays
+    /// internal-only — it has no Breakpoint of its own, so nothing outside
+    /// this method needs to reach it again.
     private func configureTransportRow(
         muteButton: NSButton,
         volumeSlider slider: NSSlider,
@@ -1420,7 +1425,7 @@ final class OverlayCardView: DraggableBackgroundView {
         fullFace.addSubview(fullTopChromeBar)
         // Full Layout never needs to reference its own drag handle again
         // — a throwaway instance, unlike Compact Layout's own
-        // `compactDragHandle`, which `applyCompactTier()` repositions.
+        // `compactDragHandle`, which `applyCompactControls()` repositions.
         let centeredConstraints = configureChromeBar(
             fullTopChromeBar, hideButton: hideButton, settingsButton: settingsButton, dragHandle: PassthroughImageView()
         )
@@ -1434,8 +1439,9 @@ final class OverlayCardView: DraggableBackgroundView {
     /// button, it has no need to survive into the Lyrics or Settings
     /// Face, so it can simply ride `compactFace`'s own `isHidden` cascade.
     /// Unlike Full Layout's own bar, the drag handle's position here isn't
-    /// permanent — `applyCompactTier()` swaps it between this centered
-    /// `.full`-tier position and a spot beside the hide dot at `.reduced`.
+    /// permanent — `applyCompactControls()` swaps it between this centered
+    /// position and a spot beside the hide dot once the settings button
+    /// is no longer visible.
     private func configureCompactChromeBar() {
         compactChromeBar.translatesAutoresizingMaskIntoConstraints = false
         compactChromeBar.alphaValue = 0
@@ -1647,7 +1653,8 @@ final class OverlayCardView: DraggableBackgroundView {
         ])
 
         // See `compactTransportRowStackedConstraints`'s own doc comment
-        // for why `.bare` needs the alternate, inline position instead.
+        // for why a very short Overlay needs the alternate, inline
+        // position instead.
         compactTransportRowStackedConstraints = [
             compactTransportRow.centerXAnchor.constraint(equalTo: compactFace.centerXAnchor),
             compactTransportRow.bottomAnchor.constraint(equalTo: compactFace.bottomAnchor, constant: -8),
@@ -1659,10 +1666,10 @@ final class OverlayCardView: DraggableBackgroundView {
             // `configureCompactFace`) only truncates before reaching
             // `lyricsButton` — narrower than `compactTransportRow` (play
             // and next together) now sitting in roughly that same trailing
-            // area at this tier. Without this, a long title could
-            // truncate assuming only the narrower (and, at `.bare`,
-            // already-hidden) lyrics icon needs avoiding, and still
-            // overlap the wider row that's actually visible here.
+            // area here. Without this, a long title could truncate
+            // assuming only the narrower (and, this short, already-hidden)
+            // lyrics icon needs avoiding, and still overlap the wider row
+            // that's actually visible here.
             compactThumbnailTextRow.trailingAnchor.constraint(lessThanOrEqualTo: compactTransportRow.leadingAnchor, constant: -8),
         ]
         NSLayoutConstraint.activate(compactTransportRowStackedConstraints)

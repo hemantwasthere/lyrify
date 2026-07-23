@@ -1,11 +1,11 @@
 import CoreGraphics
 
 /// Resolves which layout the Overlay's current size calls for — Compact
-/// Layout (a thumbnail-and-text bar, itself further resolved into a
-/// `CompactTier` by width) below a size threshold, Full Layout (Spotify
-/// Mini Player–style artwork, seek bar, and chrome) at or above it — and,
-/// for Full Layout, how many Lyrics Face lines and what font size that
-/// height affords.
+/// Layout (a thumbnail-and-text bar, itself further resolved into the set
+/// of chrome/transport controls currently visible) below a size threshold,
+/// Full Layout (Spotify Mini Player–style artwork, seek bar, and chrome) at
+/// or above it — and, for Full Layout, how many Lyrics Face lines and what
+/// font size that height affords.
 ///
 /// Expands the retired `LyricsViewScale`: its old height-to-scale formula
 /// reappears unchanged as Full Layout's own scaling, just anchored at a
@@ -15,18 +15,31 @@ import CoreGraphics
 /// transport row, and a top chrome bar besides — a taller, independent
 /// minimum, tuned separately from the scaling curve it happens to share.
 public enum OverlayLayout: Equatable, Sendable {
-    case compact(CompactTier)
+    case compact(Set<CompactControl>)
     case full(LyricsScale)
 
-    /// Compact Layout's own internal width tiers, widest to narrowest: how
-    /// much chrome and how many transport controls fit narrows in steps as
-    /// the Overlay gets narrower, rather than one fixed control set at
-    /// every width (ADR-0010).
-    public enum CompactTier: Equatable, Sendable {
-        case full
-        case reduced
-        case minimal
-        case bare
+    /// One control in Compact Layout's chrome bar or transport row that can
+    /// disappear as the Overlay narrows. Play/pause and next are
+    /// deliberately absent — they're unconditionally visible at every
+    /// Compact size, so they have no Breakpoint of their own. Replaces
+    /// ADR-0010's `CompactTier`, which bundled several of these together
+    /// into four named presets switched all at once (ADR-0013).
+    public enum CompactControl: CaseIterable, Equatable, Sendable {
+        case hideButton
+        case dragHandle
+        case settingsButton
+        case muteButton
+        case shuffleButton
+        case previousButton
+        case lyricsButton
+        case repeatButton
+        case shareButton
+
+        /// Every control at once — the placeholder callers reach for
+        /// before any real resolution has happened, since "nothing
+        /// resolved yet" reads more honestly as "assume the richest
+        /// state" than as "assume everything's hidden."
+        public static let allVisible: Set<CompactControl> = Set(allCases)
     }
 
     public struct LyricsScale: Equatable, Sendable {
@@ -39,27 +52,62 @@ public enum OverlayLayout: Equatable, Sendable {
         }
     }
 
-    /// At or above this width, Compact Layout resolves its widest tier,
-    /// `.full` — the full chrome bar and transport row, same control set
-    /// Full Layout itself shows. Tuned empirically, not a locked design
-    /// decision (matching `thresholdHeight`'s own tuning-knob framing): the
-    /// `.full` tier's 8-icon transport row structurally needs more than
-    /// the 220pt this was initially set to (matching the pre-`.full`-tier
-    /// `defaultSize.width`) — confirmed live, where the unconstrained
-    /// content pressured the window to grow past 220pt regardless.
-    public static let fullTierMinimumWidth: CGFloat = 280
+    /// The width or height below which one specific `CompactControl`
+    /// disappears, and the (higher) width or height it must clear again to
+    /// reappear — the hysteresis gap that keeps a control from flickering
+    /// in and out if a resize is held exactly on its boundary. A control
+    /// with more than one `Breakpoint` (`lyricsButton` has both a width one
+    /// and its own independent height floor) is visible only while every
+    /// one of its `Breakpoint`s says so.
+    public struct Breakpoint: Equatable, Sendable {
+        public enum Axis: Equatable, Sendable {
+            case width
+            case height
+        }
 
-    /// At or above this width (but below `fullTierMinimumWidth`), Compact
-    /// Layout resolves `.reduced` — the settings icon drops, the drag grip
-    /// relocates to a corner, and mute/shuffle/repeat/share drop from the
-    /// transport row.
-    public static let reducedTierMinimumWidth: CGFloat = 160
+        public let control: CompactControl
+        public let axis: Axis
+        public let hideBelow: CGFloat
+        public let reappearAt: CGFloat
 
-    /// Below `reducedTierMinimumWidth`, Compact Layout resolves `.minimal`
-    /// at or above this height (lyrics button and previous drop, leaving
-    /// play/next), or `.bare` below it (the hide dot and drag grip drop
-    /// too — reached only when height, not just width, is very short).
-    public static let minimalTierMinimumHeight: CGFloat = 56
+        public init(control: CompactControl, axis: Axis, hideBelow: CGFloat, reappearAt: CGFloat) {
+            self.control = control
+            self.axis = axis
+            self.hideBelow = hideBelow
+            self.reappearAt = reappearAt
+        }
+
+        fileprivate func dimension(of size: CGSize) -> CGFloat {
+            axis == .width ? size.width : size.height
+        }
+    }
+
+    /// Every `CompactControl`'s own Breakpoint(s). The width-axis entries
+    /// are listed widest-to-narrowest by `hideBelow` — the order those
+    /// controls disappear in as the Overlay narrows — followed by the
+    /// height-axis entries (not comparable to a width threshold, so not
+    /// part of that same ordering). Values are a starting point, not a
+    /// locked design decision (ADR-0013): unlike `CompactTier`'s old
+    /// boundaries, these aren't yet confirmed against Spotify's own Mini
+    /// Player — expect them to move during that empirical pass.
+    /// `hideButton` and `dragHandle` are gated on height alone (a chrome
+    /// bar needs vertical room to show at all) regardless of width, even
+    /// at widths beyond every other control's own Breakpoint; everything
+    /// else is gated on width alone, except `lyricsButton`, which keeps
+    /// its own independent height floor (the Lyrics Face floor) alongside
+    /// its width Breakpoint.
+    public static let breakpoints: [Breakpoint] = [
+        Breakpoint(control: .shareButton, axis: .width, hideBelow: 272, reappearAt: 278),
+        Breakpoint(control: .repeatButton, axis: .width, hideBelow: 256, reappearAt: 262),
+        Breakpoint(control: .settingsButton, axis: .width, hideBelow: 240, reappearAt: 246),
+        Breakpoint(control: .shuffleButton, axis: .width, hideBelow: 224, reappearAt: 230),
+        Breakpoint(control: .muteButton, axis: .width, hideBelow: 208, reappearAt: 214),
+        Breakpoint(control: .lyricsButton, axis: .width, hideBelow: 176, reappearAt: 182),
+        Breakpoint(control: .previousButton, axis: .width, hideBelow: 160, reappearAt: 166),
+        Breakpoint(control: .lyricsButton, axis: .height, hideBelow: 56, reappearAt: 60),
+        Breakpoint(control: .hideButton, axis: .height, hideBelow: 56, reappearAt: 60),
+        Breakpoint(control: .dragHandle, axis: .height, hideBelow: 56, reappearAt: 60),
+    ]
 
     /// Below this height, Compact Layout; at or above it, Full Layout.
     /// Set high enough that Full Layout's own structural minimum — its
@@ -94,15 +142,30 @@ public enum OverlayLayout: Equatable, Sendable {
     /// line count so the two always change together.
     private static let fontSizeStepPerLine: CGFloat = 1.5
 
-    public static func resolve(size: CGSize) -> OverlayLayout {
-        guard size.height >= thresholdHeight else { return .compact(compactTier(for: size)) }
+    /// `previousControls` is the set of controls visible the last time
+    /// this was resolved — each `Breakpoint`'s hysteresis needs to know
+    /// which of its two thresholds applies: a control that was visible
+    /// must drop below `hideBelow` to disappear; one that was hidden must
+    /// clear `reappearAt` to come back. `nil` means no prior resolution
+    /// exists yet (the Overlay's very first layout pass) — every control
+    /// is then judged directly against its own `hideBelow`, the same
+    /// answer a fresh resolution with no history to bias it should give.
+    public static func resolve(size: CGSize, previousControls: Set<CompactControl>? = nil) -> OverlayLayout {
+        guard size.height >= thresholdHeight else {
+            return .compact(resolveCompactControls(size: size, previousControls: previousControls))
+        }
         return resolveFull(size: size)
     }
 
-    private static func compactTier(for size: CGSize) -> CompactTier {
-        if size.width >= fullTierMinimumWidth { return .full }
-        if size.width >= reducedTierMinimumWidth { return .reduced }
-        return size.height >= minimalTierMinimumHeight ? .minimal : .bare
+    private static func resolveCompactControls(size: CGSize, previousControls: Set<CompactControl>?) -> Set<CompactControl> {
+        Set(CompactControl.allCases.filter { control in
+            let wasVisible = previousControls?.contains(control) ?? true
+            return breakpoints
+                .filter { $0.control == control }
+                .allSatisfy { breakpoint in
+                    breakpoint.dimension(of: size) >= (wasVisible ? breakpoint.hideBelow : breakpoint.reappearAt)
+                }
+        })
     }
 
     private static func resolveFull(size: CGSize) -> OverlayLayout {

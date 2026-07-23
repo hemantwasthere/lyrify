@@ -586,9 +586,12 @@ final class OverlayCardView: DraggableBackgroundView {
 
     /// Fades whichever of `fullVolumeSlider`/`volumeSlider` belongs to the
     /// current layout in or out — a plain `isHidden` toggle would jump
-    /// instantly, and hiding it collapses its own space (and the spacing
-    /// around it) in the transport row's stack view automatically, the
-    /// same way any hidden arranged subview does.
+    /// instantly. Neither slider is a stack-arranged subview of the
+    /// transport row (see `configureTransportRow`'s own doc comment), so
+    /// this never shifts any sibling icon in either direction — `isHidden`
+    /// here only keeps the invisible slider from being hit-testable
+    /// between reveals, brought back to `false` just before the fade in
+    /// starts so the animator has something visible to animate.
     private func revealVolumeSlider(_ reveal: Bool) {
         let slider = isFullLayout ? fullVolumeSlider : volumeSlider
         if reveal {
@@ -1330,14 +1333,21 @@ final class OverlayCardView: DraggableBackgroundView {
             row.topAnchor.constraint(equalTo: fullControlsOverlay.topAnchor),
             row.bottomAnchor.constraint(equalTo: fullControlsOverlay.bottomAnchor),
         ])
+
+        floatVolumeSlider(fullVolumeSlider, besideMuteButton: fullMuteButton, in: fullControlsOverlay)
     }
 
     /// Builds the shared transport row — mute, shuffle, previous, play/
     /// pause, next, repeat, share — wiring `muteButton`/`slider`/
     /// `playPause`/`shuffleButton`/`previousButton`/`repeatButton`/
-    /// `shareButton` to their shared action handlers. Shared by
-    /// `configureFullControlsOverlay`/`configureCompactTransportRow`: the
-    /// same elements, arranged identically, in two separate instances
+    /// `shareButton` to their shared action handlers. `slider` is styled
+    /// and wired here but deliberately left out of the returned row's own
+    /// `NSStackView` — it floats as its caller's own overlay instead (see
+    /// `floatVolumeSlider(_:besideMuteButton:in:)`), so revealing it can
+    /// never shift `shuffleButton`/`previousButton`/`playPause`/`nextButton`/
+    /// `repeatButton`/`shareButton` the way a stack-arranged reveal would.
+    /// Shared by `configureFullControlsOverlay`/`configureCompactTransportRow`:
+    /// the same elements, arranged identically, in two separate instances
     /// since only one layout's own row is ever visible at once.
     /// `updateMuteIcon()` runs here (not left to the caller) so whichever
     /// row is configured first always leaves both mute buttons' glyphs
@@ -1369,9 +1379,13 @@ final class OverlayCardView: DraggableBackgroundView {
         styleSlider(slider, min: 0, max: 100)
         slider.target = self
         slider.action = #selector(volumeSliderChanged)
-        // Hidden until the mute hover zone is entered — a hidden arranged
-        // subview collapses its own space (and surrounding spacing) in
-        // the row automatically, the same way any NSStackView member does.
+        // Not a stack-arranged subview — see this method's own doc comment
+        // — so its own constraints aren't auto-managed by `row` the way
+        // an arranged subview's would be.
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        // Hidden until the mute hover zone is entered — a floating overlay,
+        // not a stack member, so this never shifts any sibling icon either
+        // way.
         slider.isHidden = true
         NSLayoutConstraint.activate([
             slider.widthAnchor.constraint(equalToConstant: Self.fullVolumeSliderWidth),
@@ -1415,7 +1429,7 @@ final class OverlayCardView: DraggableBackgroundView {
         // default (high) resistance is still real, if smaller, pressure
         // this suppresses defensively — relevant once narrower Compact
         // tiers (later tickets) need this same row to compress further.
-        let row = NSStackView(views: [muteButton, slider, shuffleButton, previousButton, playPause, nextButton, repeatButton, shareButton])
+        let row = NSStackView(views: [muteButton, shuffleButton, previousButton, playPause, nextButton, repeatButton, shareButton])
         row.orientation = .horizontal
         row.spacing = Self.fullTransportRowSpacing
         row.translatesAutoresizingMaskIntoConstraints = false
@@ -1423,6 +1437,24 @@ final class OverlayCardView: DraggableBackgroundView {
             .forEach(suppressIntrinsicSizeGrowthPressure)
 
         return row
+    }
+
+    /// Adds `slider` to `container` as a floating overlay beside
+    /// `muteButton` — not an arranged subview of the transport row `row`
+    /// (`configureTransportRow` deliberately leaves it out), so revealing
+    /// or hiding it (`revealVolumeSlider(_:)`) can never shift
+    /// `shuffleButton`/`previousButton`/`playPause`/`nextButton`/
+    /// `repeatButton`/`shareButton` the way collapsing a stack-arranged
+    /// subview's own reserved space would. Added after `row` is already in
+    /// `container` (both call sites), so it draws above the transport
+    /// row's own icons — it may briefly overlap 1-2 of them while
+    /// revealed, matching a floating popover rather than reserved space.
+    private func floatVolumeSlider(_ slider: NSSlider, besideMuteButton muteButton: NSButton, in container: NSView) {
+        container.addSubview(slider)
+        NSLayoutConstraint.activate([
+            slider.leadingAnchor.constraint(equalTo: muteButton.trailingAnchor, constant: Self.fullTransportRowSpacing),
+            slider.centerYAnchor.constraint(equalTo: muteButton.centerYAnchor),
+        ])
     }
 
     /// Full Layout's top chrome bar — the real system close button
@@ -1705,6 +1737,8 @@ final class OverlayCardView: DraggableBackgroundView {
             row.topAnchor.constraint(equalTo: compactTransportRow.topAnchor),
             row.bottomAnchor.constraint(equalTo: compactTransportRow.bottomAnchor),
         ])
+
+        floatVolumeSlider(volumeSlider, besideMuteButton: compactMuteButton, in: compactTransportRow)
 
         // See `compactTransportRowStackedConstraints`'s own doc comment
         // for why a very short Overlay needs the alternate, inline

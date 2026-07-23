@@ -94,7 +94,18 @@ final class OverlayCardView: DraggableBackgroundView {
 
     /// The top chrome bar's own height — just tall enough to hold the
     /// close button, drag-handle indicator, and settings icon comfortably.
+    /// Also how far above its own resting position each layout's chrome
+    /// bar slides in from on reveal — one full bar-height is enough that
+    /// it starts out completely clear of its own resting silhouette.
     private static let chromeBarHeight: CGFloat = 20
+
+    /// The top chrome bar's own resting distance from the top of its
+    /// container at rest — Full Layout's own artwork square, Compact
+    /// Layout's own face. Named (not just the inline literal each
+    /// constraint already used) so `revealChrome(_:)` can compute the
+    /// slid-up, hidden position from the same value the resting one uses.
+    private static let fullChromeBarRestingTopInset: CGFloat = 10
+    private static let compactChromeBarRestingTopInset: CGFloat = 8
 
     /// The decorative resize-handle glyph's size, and the size of its own
     /// nested hover/cursor zone — small enough to read as a corner detail,
@@ -385,6 +396,18 @@ final class OverlayCardView: DraggableBackgroundView {
     /// Layout's minimum size even while `fullFace` is hidden.
     private var fullLayoutContentConstraints: [NSLayoutConstraint] = []
 
+    /// Each layout's own top chrome bar top-offset constraint — one of
+    /// `fullLayoutContentConstraints`/the plain constraints
+    /// `configureCompactChromeBar` activates directly, kept as its own
+    /// property besides so `revealChrome(_:)` can animate its `constant`
+    /// between its own resting inset (`Self.fullChromeBarRestingTopInset`/
+    /// `Self.compactChromeBarRestingTopInset`, resting, revealed) and that
+    /// same inset minus `Self.chromeBarHeight` (slid up out of view,
+    /// hidden) — a slide-down-into-place reveal, not a plain fade in
+    /// place.
+    private var fullTopChromeBarTopConstraint: NSLayoutConstraint?
+    private var compactChromeBarTopConstraint: NSLayoutConstraint?
+
     init() {
         super.init(frame: NSRect(origin: .zero, size: Self.defaultSize))
 
@@ -533,14 +556,7 @@ final class OverlayCardView: DraggableBackgroundView {
             revealVolumeSlider(true)
             return
         }
-        resizeHandleImageView.animator().alphaValue = 1
-        if isFullLayout {
-            fullControlsOverlay.animator().alphaValue = 1
-            fullTopChromeBar.animator().alphaValue = 1
-        } else {
-            compactChromeBar.animator().alphaValue = 1
-            compactTransportRow.animator().alphaValue = 1
-        }
+        revealChrome(true)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -552,13 +568,47 @@ final class OverlayCardView: DraggableBackgroundView {
             revealVolumeSlider(false)
             return
         }
-        resizeHandleImageView.animator().alphaValue = 0
-        if isFullLayout {
-            fullControlsOverlay.animator().alphaValue = 0
-            fullTopChromeBar.animator().alphaValue = 0
-        } else {
-            compactChromeBar.animator().alphaValue = 0
-            compactTransportRow.animator().alphaValue = 0
+        revealChrome(false)
+    }
+
+    /// The current layout's own top chrome bar slides down into place
+    /// while fading in (the reverse on exit: fades out while sliding back
+    /// up, out of view) — Spotify's own drop-down motion, not a plain fade
+    /// in place. Clipped within the card's own bounds the same way
+    /// everything else here is: `self.layer?.masksToBounds` (set in
+    /// `init()`) already clips its whole subview tree, chrome bar
+    /// included, so sliding it above its resting position hides it
+    /// without any dedicated clipping view of its own. Neither bar's
+    /// height ever changes, so this never grows the card or the window.
+    /// `resizeHandleImageView`/`fullControlsOverlay`/`compactTransportRow`
+    /// still just fade — only the two top chrome bars gain the slide.
+    ///
+    /// `allowsImplicitAnimation`, not a bare `.animator()` call the way
+    /// the plain fades here still are: a constraint's own `constant` only
+    /// animates smoothly alongside a `layoutSubtreeIfNeeded()` call inside
+    /// the same animation context, unlike `alphaValue`, which animates on
+    /// its own regardless — so the whole reveal (fades included) is
+    /// grouped into one explicit context here, rather than splitting the
+    /// slide out into its own separately-timed animation.
+    private func revealChrome(_ reveal: Bool) {
+        let chromeBar = isFullLayout ? fullTopChromeBar : compactChromeBar
+        let topConstraint = isFullLayout ? fullTopChromeBarTopConstraint : compactChromeBarTopConstraint
+        let restingInset = isFullLayout ? Self.fullChromeBarRestingTopInset : Self.compactChromeBarRestingTopInset
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.crossfadeDuration
+            context.allowsImplicitAnimation = true
+
+            resizeHandleImageView.animator().alphaValue = reveal ? 1 : 0
+            chromeBar.animator().alphaValue = reveal ? 1 : 0
+            topConstraint?.constant = reveal ? restingInset : restingInset - Self.chromeBarHeight
+            chromeBar.superview?.layoutSubtreeIfNeeded()
+
+            if isFullLayout {
+                fullControlsOverlay.animator().alphaValue = reveal ? 1 : 0
+            } else {
+                compactTransportRow.animator().alphaValue = reveal ? 1 : 0
+            }
         }
     }
 
@@ -658,12 +708,18 @@ final class OverlayCardView: DraggableBackgroundView {
 
         // Reset both layouts' hover-revealed chrome immediately (not
         // animated) rather than leaving a stale reveal from before a resize
-        // crossed the threshold mid-hover.
+        // crossed the threshold mid-hover. Each chrome bar's own slide
+        // constraint resets alongside its alpha — left at whatever
+        // position a resize happened to interrupt it at otherwise, it
+        // would reappear pre-slid on the next real hover instead of
+        // starting from just above like `revealChrome(_:)` expects.
         resizeHandleImageView.alphaValue = 0
         compactChromeBar.alphaValue = 0
         compactTransportRow.alphaValue = 0
         fullControlsOverlay.alphaValue = 0
         fullTopChromeBar.alphaValue = 0
+        compactChromeBarTopConstraint?.constant = Self.compactChromeBarRestingTopInset - Self.chromeBarHeight
+        fullTopChromeBarTopConstraint?.constant = Self.fullChromeBarRestingTopInset - Self.chromeBarHeight
 
         // Reachable regardless of which face is currently showing — set
         // here, not inside the guard below, so neither goes dark the
@@ -1227,6 +1283,14 @@ final class OverlayCardView: DraggableBackgroundView {
         // exactly removes any pull at all: the artwork always exactly
         // matches whatever width the window
         // already has, never asks for more.
+        // Built as its own `let`, not inline below, so `revealChrome(_:)`
+        // can animate its `constant` later — see
+        // `fullTopChromeBarTopConstraint`'s own doc comment.
+        let fullTopChromeBarTopConstraint = fullTopChromeBar.topAnchor.constraint(
+            equalTo: fullArtworkBackgroundView.topAnchor, constant: Self.fullChromeBarRestingTopInset
+        )
+        self.fullTopChromeBarTopConstraint = fullTopChromeBarTopConstraint
+
         fullLayoutContentConstraints = [
             fullArtworkBackgroundView.leadingAnchor.constraint(equalTo: fullFace.leadingAnchor, constant: 16),
             fullArtworkBackgroundView.trailingAnchor.constraint(equalTo: fullFace.trailingAnchor, constant: -16),
@@ -1272,7 +1336,7 @@ final class OverlayCardView: DraggableBackgroundView {
             // the art rather than above it.
             fullTopChromeBar.leadingAnchor.constraint(equalTo: fullArtworkBackgroundView.leadingAnchor, constant: 12),
             fullTopChromeBar.trailingAnchor.constraint(equalTo: fullArtworkBackgroundView.trailingAnchor, constant: -12),
-            fullTopChromeBar.topAnchor.constraint(equalTo: fullArtworkBackgroundView.topAnchor, constant: 10),
+            fullTopChromeBarTopConstraint,
 
             // `fullFace`'s own pin-to-self — grouped with the rest here,
             // not activated unconditionally, since it only makes sense
@@ -1496,10 +1560,18 @@ final class OverlayCardView: DraggableBackgroundView {
         )
         NSLayoutConstraint.activate(compactDragHandleFullTierConstraints)
 
+        // Built as its own `let`, not inline below, so `revealChrome(_:)`
+        // can animate its `constant` later — see
+        // `compactChromeBarTopConstraint`'s own doc comment.
+        let compactChromeBarTopConstraint = compactChromeBar.topAnchor.constraint(
+            equalTo: compactFace.topAnchor, constant: Self.compactChromeBarRestingTopInset
+        )
+        self.compactChromeBarTopConstraint = compactChromeBarTopConstraint
+
         NSLayoutConstraint.activate([
             compactChromeBar.leadingAnchor.constraint(equalTo: compactFace.leadingAnchor, constant: 16),
             compactChromeBar.trailingAnchor.constraint(equalTo: compactFace.trailingAnchor, constant: -16),
-            compactChromeBar.topAnchor.constraint(equalTo: compactFace.topAnchor, constant: 8),
+            compactChromeBarTopConstraint,
         ])
     }
 

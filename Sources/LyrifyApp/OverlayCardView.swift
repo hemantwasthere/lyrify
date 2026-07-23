@@ -92,11 +92,8 @@ final class OverlayCardView: DraggableBackgroundView {
 
     private static let crossfadeDuration: TimeInterval = 0.2
 
-    /// The top chrome bar's hide (red dot) button diameter.
-    private static let chromeDotSize: CGFloat = 10
-
-    /// The top chrome bar's own height — just tall enough to hold the red
-    /// dot, drag-handle indicator, and settings icon comfortably.
+    /// The top chrome bar's own height — just tall enough to hold the
+    /// close button, drag-handle indicator, and settings icon comfortably.
     private static let chromeBarHeight: CGFloat = 20
 
     /// The decorative resize-handle glyph's size, and the size of its own
@@ -152,7 +149,6 @@ final class OverlayCardView: DraggableBackgroundView {
     var onToggleShuffle: (() -> Void)?
     var onToggleRepeat: (() -> Void)?
     var onShare: (() -> Void)?
-    var onHideOverlay: (() -> Void)?
     var onToggleBlurredBackground: ((Bool) -> Void)?
 
     private let compactFace = NSView()
@@ -237,14 +233,13 @@ final class OverlayCardView: DraggableBackgroundView {
     /// that one is independent of the card-wide `trackingArea`.
     private var resizeHandleTrackingArea: NSTrackingArea?
 
-    /// Full Layout's hover-revealed top chrome bar: the hide (red dot),
-    /// drag-handle indicator, and settings icon.
+    /// Full Layout's hover-revealed top chrome bar: the real system close
+    /// button (ADR-0012), drag-handle indicator, and settings icon.
     private let fullTopChromeBar = NSView()
-    private let hideButton = NSButton()
     private let settingsButton = NSButton()
 
     /// Compact Layout's own top chrome bar and transport row — the same
-    /// hide/drag/settings elements as `fullTopChromeBar`, and the same
+    /// close/drag/settings elements as `fullTopChromeBar`, and the same
     /// mute/shuffle/previous/play/next/repeat/share elements as
     /// `fullControlsOverlay`'s row, in second instances since only one
     /// layout's own chrome is ever visible at once. Stacked above and
@@ -252,27 +247,41 @@ final class OverlayCardView: DraggableBackgroundView {
     /// overlaid on top of it the way Full Layout's own chrome overlays its
     /// artwork — Compact Layout has no artwork square to float over.
     private let compactChromeBar = NSView()
-    private let compactHideButton = NSButton()
     private let compactSettingsButton = NSButton()
     private let compactTransportRow = NSView()
     private let compactMuteButton = NSButton()
 
+    /// The window's one real system close button (ADR-0012) — there's
+    /// only one for the whole window, unlike every other chrome-bar
+    /// element, which has a separate instance per layout. `init()` runs
+    /// before there's a window to ask for one, so it starts `nil` and is
+    /// installed later by `installCloseButton(_:)`, then reparented
+    /// between `fullTopChromeBar` and `compactChromeBar` by
+    /// `reparentCloseButton()` as the layout changes.
+    private var closeButton: NSButton?
+    private var closeButtonFullConstraints: [NSLayoutConstraint] = []
+    private var closeButtonCompactConstraints: [NSLayoutConstraint] = []
+
     /// Compact Layout's own drag-handle indicator — centered in
     /// `compactChromeBar`, matching Full Layout's own, while the settings
-    /// button is visible; relocated to sit directly beside
-    /// `compactHideButton` instead once the settings button on the other
-    /// side of the bar is hidden. Passed into `configureChromeBar` (which
-    /// otherwise builds and discards its own throwaway one for Full
-    /// Layout's bar) so it can be referenced again afterward, the same
-    /// pattern `configureTransportRow`'s own `muteButton`/`playPause`
-    /// params already use.
+    /// button is visible; relocated to sit directly beside the close
+    /// button instead once the settings button on the other side of the
+    /// bar is hidden. Passed into `configureChromeBar` (which otherwise
+    /// builds and discards its own throwaway one for Full Layout's bar) so
+    /// it can be referenced again afterward, the same pattern
+    /// `configureTransportRow`'s own `muteButton`/`playPause` params
+    /// already use.
     private let compactDragHandle = PassthroughImageView()
 
     /// The two position states `applyCompactControls()` swaps
-    /// `compactDragHandle` between — built once in
-    /// `configureCompactChromeBar`. Unlike `fullLayoutContentConstraints`'s
-    /// own plain on/off toggle, this is a swap between two mutually
-    /// exclusive sets: exactly one is ever active.
+    /// `compactDragHandle` between: `compactDragHandleFullTierConstraints`
+    /// built once in `configureCompactChromeBar`,
+    /// `compactDragHandleReducedTierConstraints` built later in
+    /// `installCloseButton(_:)` since it anchors to the real close button,
+    /// which doesn't exist yet at `configureCompactChromeBar`'s own call
+    /// time. Unlike `fullLayoutContentConstraints`'s own plain on/off
+    /// toggle, this is a swap between two mutually exclusive sets: exactly
+    /// one is ever active.
     private var compactDragHandleFullTierConstraints: [NSLayoutConstraint] = []
     private var compactDragHandleReducedTierConstraints: [NSLayoutConstraint] = []
 
@@ -661,17 +670,22 @@ final class OverlayCardView: DraggableBackgroundView {
         fullLyricsButton.isHidden = !isFullLayout
         lyricsButton.isHidden = isFullLayout
 
+        // Moves the real close button into whichever bar matches
+        // `isFullLayout` before `applyCompactControls()` runs, so its own
+        // Breakpoint check below lands on the button now actually parented
+        // in `compactChromeBar`.
+        reparentCloseButton()
+
         // Run before the Lyrics/Settings-Face guard below, not after: that
         // guard's own early-return, whenever the Lyrics Face is still the
         // (pre-dismissal) active face, would otherwise skip this entirely
         // — exactly the moment a change in visible controls needs to react
-        // to. Returns
-        // whether it just triggered a dismissal back to Now Playing, so
-        // the guard below can treat that the same as the Lyrics Face
-        // already being closed, rather than fighting the crossfade it
-        // just started (`showNowPlaying()` synchronously un-hides
-        // `compactFace`/`fullFace` as part of its own setup — the guard's
-        // `else` branch re-hiding both immediately after, based on
+        // to. Returns whether it just triggered a dismissal back to Now
+        // Playing, so the guard below can treat that the same as the
+        // Lyrics Face already being closed, rather than fighting the
+        // crossfade it just started (`showNowPlaying()` synchronously
+        // un-hides `compactFace`/`fullFace` as part of its own setup — the
+        // guard's `else` branch re-hiding both immediately after, based on
         // `lyricsFace.isHidden`'s still-stale pre-animation value, would
         // undo that in the same tick).
         let dismissedLyricsFace = applyCompactControls()
@@ -756,7 +770,7 @@ final class OverlayCardView: DraggableBackgroundView {
         NSLayoutConstraint.deactivate(dragHandleAtCorner ? compactDragHandleFullTierConstraints : compactDragHandleReducedTierConstraints)
         NSLayoutConstraint.activate(dragHandleAtCorner ? compactDragHandleReducedTierConstraints : compactDragHandleFullTierConstraints)
 
-        compactHideButton.isHidden = !isVisible(.hideButton)
+        closeButton?.isHidden = !isVisible(.hideButton)
         compactDragHandle.isHidden = !isVisible(.dragHandle)
         compactPreviousButton.isHidden = !isVisible(.previousButton)
         // Overwrites `update(layout:)`'s own earlier `= isFullLayout`
@@ -1413,7 +1427,8 @@ final class OverlayCardView: DraggableBackgroundView {
         return row
     }
 
-    /// Full Layout's top chrome bar — the hide (red dot) button, a
+    /// Full Layout's top chrome bar — the real system close button
+    /// (ADR-0012, installed later by `installCloseButton(_:)`), a
     /// decorative drag-handle indicator, and the settings icon — faded
     /// in/out on the same hover as `fullControlsOverlay`. Full Layout
     /// never narrows this bar the way Compact Layout's own tiers do, so
@@ -1427,36 +1442,28 @@ final class OverlayCardView: DraggableBackgroundView {
         // — a throwaway instance, unlike Compact Layout's own
         // `compactDragHandle`, which `applyCompactControls()` repositions.
         let centeredConstraints = configureChromeBar(
-            fullTopChromeBar, hideButton: hideButton, settingsButton: settingsButton, dragHandle: PassthroughImageView()
+            fullTopChromeBar, settingsButton: settingsButton, dragHandle: PassthroughImageView()
         )
         NSLayoutConstraint.activate(centeredConstraints)
     }
 
-    /// Compact Layout's own top chrome bar — the same three elements as
-    /// `fullTopChromeBar`, in a second instance, faded in/out on the same
-    /// hover as `compactTransportRow`. A `compactFace` subview, not a
-    /// sibling of `self` the way `lyricsButton` is: unlike the lyrics
-    /// button, it has no need to survive into the Lyrics or Settings
-    /// Face, so it can simply ride `compactFace`'s own `isHidden` cascade.
-    /// Unlike Full Layout's own bar, the drag handle's position here isn't
-    /// permanent — `applyCompactControls()` swaps it between this centered
-    /// position and a spot beside the hide dot once the settings button
-    /// is no longer visible.
+    /// Compact Layout's own top chrome bar — the same close/drag/settings
+    /// elements as `fullTopChromeBar`, faded in/out on the same hover as
+    /// `compactTransportRow`. A `compactFace` subview, not a sibling of
+    /// `self` the way `lyricsButton` is: unlike the lyrics button, it has
+    /// no need to survive into the Lyrics or Settings Face, so it can
+    /// simply ride `compactFace`'s own `isHidden` cascade. Unlike Full
+    /// Layout's own bar, the drag handle's position here isn't permanent
+    /// — `applyCompactControls()` swaps it between this centered position
+    /// and a spot beside the close button once the settings button is no
+    /// longer visible.
     private func configureCompactChromeBar() {
         compactChromeBar.translatesAutoresizingMaskIntoConstraints = false
         compactChromeBar.alphaValue = 0
         compactFace.addSubview(compactChromeBar)
         compactDragHandleFullTierConstraints = configureChromeBar(
-            compactChromeBar, hideButton: compactHideButton, settingsButton: compactSettingsButton, dragHandle: compactDragHandle
+            compactChromeBar, settingsButton: compactSettingsButton, dragHandle: compactDragHandle
         )
-        // Sits directly beside the hide dot, sharing its own vertical
-        // center — reads as one small cluster in the bar's leading
-        // corner, matching the ticket's own "alongside the hide dot"
-        // framing, rather than a second element floating elsewhere.
-        compactDragHandleReducedTierConstraints = [
-            compactDragHandle.leadingAnchor.constraint(equalTo: compactHideButton.trailingAnchor, constant: 6),
-            compactDragHandle.centerYAnchor.constraint(equalTo: compactChromeBar.centerYAnchor),
-        ]
         NSLayoutConstraint.activate(compactDragHandleFullTierConstraints)
 
         NSLayoutConstraint.activate([
@@ -1466,11 +1473,14 @@ final class OverlayCardView: DraggableBackgroundView {
         ])
     }
 
-    /// Builds a top chrome bar — the hide (red dot) button, `dragHandle`,
-    /// and the settings icon — into `bar`, using `hide`/`settings` as its
-    /// two interactive elements. Shared by
+    /// Builds a top chrome bar — `dragHandle` and the settings icon — into
+    /// `bar`. The real close button isn't part of this: it doesn't exist
+    /// yet at this method's call time (`installCloseButton(_:)` installs
+    /// it later, once a window exists to ask for one) and, unlike
+    /// `dragHandle`/`settings`, there's only one of it shared between both
+    /// layouts rather than one instance per bar. Shared by
     /// `configureFullTopChromeBar`/`configureCompactChromeBar`: the same
-    /// three elements, arranged identically, in two separate instances
+    /// two elements, arranged identically, in two separate instances
     /// since only one layout's own bar is ever visible at once — the
     /// same reason `configureTransportRow` takes its own buttons as
     /// params rather than building them internally. The drag-handle
@@ -1485,17 +1495,8 @@ final class OverlayCardView: DraggableBackgroundView {
     /// Compact Layout's tiers need to swap this position out later, while
     /// Full Layout's never changes.
     private func configureChromeBar(
-        _ bar: NSView, hideButton hide: NSButton, settingsButton settings: NSButton, dragHandle: PassthroughImageView
+        _ bar: NSView, settingsButton settings: NSButton, dragHandle: PassthroughImageView
     ) -> [NSLayoutConstraint] {
-        hide.wantsLayer = true
-        hide.isBordered = false
-        hide.title = ""
-        hide.layer?.backgroundColor = NSColor.systemRed.cgColor
-        hide.layer?.cornerRadius = Self.chromeDotSize / 2
-        hide.target = self
-        hide.action = #selector(hideTapped)
-        hide.translatesAutoresizingMaskIntoConstraints = false
-
         dragHandle.image = NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: nil)
         dragHandle.contentTintColor = .white.withAlphaComponent(0.4)
         dragHandle.translatesAutoresizingMaskIntoConstraints = false
@@ -1507,17 +1508,11 @@ final class OverlayCardView: DraggableBackgroundView {
         settings.action = #selector(settingsTapped)
         settings.translatesAutoresizingMaskIntoConstraints = false
 
-        bar.addSubview(hide)
         bar.addSubview(dragHandle)
         bar.addSubview(settings)
 
         NSLayoutConstraint.activate([
             bar.heightAnchor.constraint(equalToConstant: Self.chromeBarHeight),
-
-            hide.widthAnchor.constraint(equalToConstant: Self.chromeDotSize),
-            hide.heightAnchor.constraint(equalToConstant: Self.chromeDotSize),
-            hide.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
-            hide.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
 
             settings.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
             settings.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
@@ -1527,6 +1522,67 @@ final class OverlayCardView: DraggableBackgroundView {
             dragHandle.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
             dragHandle.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
         ]
+    }
+
+    /// Installs the window's one real system close button (ADR-0012) —
+    /// called once by `OverlayController` right after creating the
+    /// Overlay's window, since no window (and so no `standardWindowButton`)
+    /// exists yet at `init()` time. Replaces the hand-drawn hide dot
+    /// outright: the same button object is reparented between
+    /// `fullTopChromeBar` and `compactChromeBar` by `reparentCloseButton()`
+    /// as the layout changes, since there's only one real button to share
+    /// between them.
+    ///
+    /// `compactDragHandleReducedTierConstraints` is built here, not in
+    /// `configureCompactChromeBar()`, for the same reason: it anchors to
+    /// this button's trailing edge, which doesn't exist until now.
+    func installCloseButton(_ button: NSButton) {
+        button.translatesAutoresizingMaskIntoConstraints = false
+        closeButton = button
+
+        closeButtonFullConstraints = [
+            button.leadingAnchor.constraint(equalTo: fullTopChromeBar.leadingAnchor),
+            button.centerYAnchor.constraint(equalTo: fullTopChromeBar.centerYAnchor),
+        ]
+        closeButtonCompactConstraints = [
+            button.leadingAnchor.constraint(equalTo: compactChromeBar.leadingAnchor),
+            button.centerYAnchor.constraint(equalTo: compactChromeBar.centerYAnchor),
+        ]
+
+        // Sits directly beside the close button, sharing its own vertical
+        // center — reads as one small cluster in the bar's leading
+        // corner, matching the ticket's own "alongside the hide dot"
+        // framing, rather than a second element floating elsewhere.
+        compactDragHandleReducedTierConstraints = [
+            compactDragHandle.leadingAnchor.constraint(equalTo: button.trailingAnchor, constant: 6),
+            compactDragHandle.centerYAnchor.constraint(equalTo: compactChromeBar.centerYAnchor),
+        ]
+
+        reparentCloseButton()
+    }
+
+    /// Moves the shared close button into whichever chrome bar matches
+    /// `isFullLayout`, called from `update(layout:)` whenever the Overlay
+    /// crosses the Compact/Full boundary (`addSubview` on a view already
+    /// elsewhere in the hierarchy moves it, rather than requiring an
+    /// explicit remove first). Full Layout's own button is never hidden by
+    /// a Breakpoint — Full Layout never narrows — so it's explicitly reset
+    /// visible here; Compact Layout's own visibility is
+    /// `applyCompactControls()`'s call, made right after this runs.
+    private func reparentCloseButton() {
+        guard let closeButton else { return }
+
+        NSLayoutConstraint.deactivate(closeButtonFullConstraints)
+        NSLayoutConstraint.deactivate(closeButtonCompactConstraints)
+
+        if isFullLayout {
+            fullTopChromeBar.addSubview(closeButton)
+            NSLayoutConstraint.activate(closeButtonFullConstraints)
+            closeButton.isHidden = false
+        } else {
+            compactChromeBar.addSubview(closeButton)
+            NSLayoutConstraint.activate(closeButtonCompactConstraints)
+        }
     }
 
     /// The decorative resize-handle glyph — hover-revealed alongside
@@ -1719,10 +1775,6 @@ final class OverlayCardView: DraggableBackgroundView {
 
     @objc private func shareTapped() {
         onShare?()
-    }
-
-    @objc private func hideTapped() {
-        onHideOverlay?()
     }
 
     /// Opens the settings panel, remembering whether Lyrics or Now Playing

@@ -71,7 +71,7 @@ _Avoid_: Delay, latency adjustment, calibration
 ### Display
 
 **Overlay**:
-The single always-visible companion widget for the current Track: draggable anywhere by clicking and dragging its body directly, resizable by dragging its edge within sensible minimum and maximum bounds, and never taking keyboard focus even though it accepts clicks — so it never steals focus from whatever the listener is doing elsewhere. Follows the listener across every desktop Space and fullscreen app.
+The single always-visible companion widget for the current Track: draggable anywhere by clicking and dragging its body directly, resizable by dragging its edge within sensible minimum and maximum bounds. A real titled window, not a borderless non-activating panel — it can become key on click and shows a genuine native close button, at the cost of being able to take keyboard focus like any other window (ADR-0012 reopens ADR-0006's opposite guarantee). Follows the listener across every desktop Space and fullscreen app.
 _Avoid_: HUD (implies non-interactive; this one is dragged and clicked directly)
 
 **Now Playing Face**:

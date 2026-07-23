@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         self.menuBar = menuBar
 
-        overlay.onVisibilityChangedByHideButton = { [weak menuBar] in
+        overlay.onVisibilityChangedByCloseButton = { [weak menuBar] in
             menuBar?.refreshOverlayVisibilityMenuState()
         }
 

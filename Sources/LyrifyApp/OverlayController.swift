@@ -28,12 +28,12 @@ final class OverlayController {
 
     private var rotation = DiscRotation()
 
-    /// Fired after the Overlay's own hide button flips
+    /// Fired after the Overlay's own close button flips
     /// `OverlayVisibilityPreference` — so whatever else displays that same
     /// preference (the status item's "Show Overlay" checkbox) can re-sync
     /// itself, since this hide path doesn't go through that checkbox's own
     /// toggle.
-    var onVisibilityChangedByHideButton: (() -> Void)?
+    var onVisibilityChangedByCloseButton: (() -> Void)?
 
     /// The current Track's Synced Lyrics once found; nil while looking up,
     /// on a confirmed miss, or when unavailable — every one of those is "no
@@ -159,6 +159,10 @@ final class OverlayController {
         window.minSize = Self.minimumSize
         window.maxSize = Self.maximumSize
         window.setFrame(NSRect(origin: initialOrigin, size: initialSize), display: true)
+        // Requires a real window to ask for — nothing before this line can
+        // reach it, since `standardWindowButton` only exists once the
+        // window itself (with `.closable` in its `styleMask`) does.
+        overlayView.installCloseButton(window.standardWindowButton(.closeButton)!)
         self.currentLayout = OverlayLayout.resolve(size: initialSize)
         overlayView.update(layout: currentLayout)
         overlayView.update(blurredBackgroundEnabled: blurredBackgroundPreference.isEnabled)
@@ -175,19 +179,17 @@ final class OverlayController {
         overlayView.onToggleShuffle = { [weak self] in try? self?.bridge.toggleShuffle() }
         overlayView.onToggleRepeat = { [weak self] in try? self?.bridge.toggleRepeat() }
         overlayView.onShare = { [weak self] in self?.shareCurrentTrack() }
-        // Same visibility mechanism the menu bar's "Show Overlay" toggle
-        // uses — not a parallel one.
-        overlayView.onHideOverlay = { [weak self] in
-            guard let self else { return }
-            self.visibilityPreference.isVisible = false
-            self.refreshVisibility()
-            self.onVisibilityChangedByHideButton?()
-        }
         overlayView.onToggleBlurredBackground = { [weak self] isEnabled in
             guard let self else { return }
             self.blurredBackgroundPreference.isEnabled = isEnabled
             self.applyBackgroundImage()
         }
+        // The real close button routes through `windowShouldClose(_:)`
+        // (see `OverlayWindow`), not a direct target/action — this is the
+        // one choke point every path that could ever close the window
+        // funnels through. Same visibility mechanism the menu bar's "Show
+        // Overlay" toggle uses — not a parallel one.
+        window.onCloseRequested = { [weak self] in self?.hideOverlay() }
 
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
@@ -234,6 +236,15 @@ final class OverlayController {
         } else {
             window.orderOut(nil)
         }
+    }
+
+    /// Hides the Overlay without closing/deallocating its window — what
+    /// the real close button's `windowShouldClose(_:)` interception
+    /// (`OverlayWindow.onCloseRequested`) resolves to.
+    private func hideOverlay() {
+        visibilityPreference.isVisible = false
+        refreshVisibility()
+        onVisibilityChangedByCloseButton?()
     }
 
     private func positionMoved() {

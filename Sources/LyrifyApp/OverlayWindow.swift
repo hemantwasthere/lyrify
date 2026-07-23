@@ -39,6 +39,13 @@ final class OverlayWindow: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
+        // Without this, the content view is asked to redraw at every
+        // intermediate size of a live resize drag — visibly flickery/laggy
+        // next to Spotify's own Mini Player (ADR-0009 names it as this
+        // resizable card's own reference). This tells AppKit to scale the
+        // existing backing store between frames instead, redrawing only
+        // once the drag settles.
+        preservesContentDuringLiveResize = true
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         // No style-mask flag suppresses just the zoom button the way

@@ -395,6 +395,12 @@ final class OverlayCardView: DraggableBackgroundView {
         super.init(frame: NSRect(origin: .zero, size: Self.defaultSize))
 
         wantsLayer = true
+        // Nothing here is ever drawn via `draw(_:)` — background color,
+        // border, and corner radius are plain CALayer properties Core
+        // Animation composites on its own regardless of resize — so there's
+        // no bitmap content that would ever need redrawing as this view's
+        // size changes during a live resize drag.
+        layerContentsRedrawPolicy = .never
         layer?.cornerRadius = Self.cornerRadius
         layer?.masksToBounds = true
         layer?.backgroundColor = NSColor.black.withAlphaComponent(0.85).cgColor

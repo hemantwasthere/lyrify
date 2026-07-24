@@ -1,0 +1,14 @@
+.build
+.git
+.github
+.agents
+.conductor
+.claude
+Sources
+Tests
+Scripts
+docs
+Resources
+Package.swift
+skills-lock.json
+*.md

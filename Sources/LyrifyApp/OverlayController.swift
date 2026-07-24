@@ -104,14 +104,16 @@ final class OverlayController {
     private static let minimumSize = OverlayCardView.defaultSize
 
     /// However large the listener drags the Overlay, resizing stops
-    /// here. Width is deliberately more modest than an earlier draft of
-    /// this bound (480) — Full Layout's square artwork area grows with
-    /// the Overlay's width, so a wider ceiling here also raises how tall
-    /// Full Layout's structural minimum can get at that width, and
-    /// `OverlayLayout.thresholdHeight` has to clear that at every width
-    /// this ceiling allows (see its own comment). Raising this width
-    /// means raising that threshold correspondingly, not independently.
-    private static let maximumSize = NSSize(width: 320, height: 550)
+    /// here. Wide enough (ADR-0015) that Compact Layout can reach
+    /// Spotify's small Mini Player proportions — a wide, short horizontal
+    /// bar — rather than being trapped narrower than the thing it's meant
+    /// to replicate. This width no longer drags `thresholdHeight` up with
+    /// it the way an earlier draft's own comment warned: Full Layout's
+    /// artwork square is now capped to its own fixed maximum width
+    /// (`OverlayCardView.fullArtworkMaxWidth`) and centered within any
+    /// wider Overlay, so its structural minimum — and so the threshold —
+    /// is independent of this ceiling.
+    private static let maximumSize = NSSize(width: 600, height: 550)
 
     // nonisolated(unsafe) so deinit may remove it; safe because it's written
     // once in init and never mutated again. Same rationale as

@@ -2,6 +2,33 @@ import AppKit
 import LyrifyCore
 import QuartzCore
 
+/// The dark gradient behind either layout's hover-revealed transport
+/// controls (the **Scrim** — ADR-0015), there purely so light control
+/// glyphs stay legible over bright album art. Its backing layer *is* a
+/// `CAGradientLayer`, so it resizes with the view for free on every live
+/// resize tick — no per-frame relayout of a sublayer. Passes every click
+/// straight through (`hitTest` returns `nil`): it's decorative, sitting
+/// between the artwork/text below and the real controls above, so a click
+/// on it must reach whatever it's dimming — a transport button on top, or
+/// `DraggableBackgroundView`'s own drag underneath — never the scrim
+/// itself.
+final class GradientScrimView: NSView {
+    override func makeBackingLayer() -> CALayer { CAGradientLayer() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func setGradient(topAlpha: CGFloat, bottomAlpha: CGFloat) {
+        wantsLayer = true
+        guard let gradient = layer as? CAGradientLayer else { return }
+        gradient.colors = [
+            NSColor.black.withAlphaComponent(topAlpha).cgColor,
+            NSColor.black.withAlphaComponent(bottomAlpha).cgColor,
+        ]
+        gradient.startPoint = CGPoint(x: 0.5, y: 1)
+        gradient.endPoint = CGPoint(x: 0.5, y: 0)
+    }
+}
+
 /// The Overlay's one and only window content — the Now Playing face, shown
 /// as Compact Layout (a thumbnail beside the current Track's title and
 /// artist, at its most generous size styled just like Full Layout: a
@@ -23,8 +50,10 @@ import QuartzCore
 /// thumbnail, on that same hover. The settings icon (in either layout's own
 /// chrome bar) opens a third face — a single toggle for Full Layout's
 /// artwork background's color-extraction wash, and a Done button back to
-/// whichever face was showing before. Compact Layout never shows a seek
-/// bar — seeking is exclusively a Full Layout capability. Clicking any
+/// whichever face was showing before. Both layouts now show a Seek Bar
+/// (ADR-0015): Full Layout's sits beneath its artwork with elapsed/
+/// remaining time labels, Compact Layout's is a slim line pinned to its
+/// bottom edge. Clicking any
 /// non-interactive area (inherited from `DraggableBackgroundView`) only
 /// ever starts a drag — there is no more expand/collapse gesture, since
 /// there's nothing left to expand into.
@@ -79,7 +108,7 @@ final class OverlayCardView: DraggableBackgroundView {
     /// `OverlayController.clamped(_:)`, which is what makes that true even
     /// for a stale remembered size from a launch before that ceiling was
     /// this low.
-    private static let maximumRowWidth: CGFloat = 320 - 28
+    private static let maximumRowWidth: CGFloat = 600 - 28
 
     static let discSize: CGFloat = 40
 
@@ -108,6 +137,16 @@ final class OverlayCardView: DraggableBackgroundView {
     /// leaving the blurred/plain backdrop clearly visible around it.
     private static let fullArtworkForegroundScale: CGFloat = 0.62
 
+    /// The widest Full Layout's artwork square is ever drawn (ADR-0015).
+    /// Below this the square still tracks the Overlay's width edge-to-edge;
+    /// once the Overlay grows past it, the square stops here and centers,
+    /// leaving side margins rather than stretching. This is what keeps Full
+    /// Layout's structural minimum — and so `OverlayLayout.thresholdHeight`
+    /// — independent of `OverlayController.maximumSize.width`: however wide
+    /// the Overlay's own ceiling rises, the square (and the height it
+    /// demands) never grows past this.
+    private static let fullArtworkMaxWidth: CGFloat = 320
+
     private static let crossfadeDuration: TimeInterval = 0.2
 
     /// The top chrome bar's own height — just tall enough to hold the
@@ -125,39 +164,6 @@ final class OverlayCardView: DraggableBackgroundView {
     private static let fullChromeBarRestingTopInset: CGFloat = 10
     private static let compactChromeBarRestingTopInset: CGFloat = 8
 
-    /// The decorative resize-handle glyph's size, and the size of its own
-    /// nested hover/cursor zone — small enough to read as a corner detail,
-    /// not a real button.
-    private static let resizeHandleSize: CGFloat = 14
-
-    /// Shared by the decorative glyph and the cursor built from it, so the
-    /// two can never drift apart visually.
-    private static let resizeHandleSymbolName = "arrow.up.left.and.arrow.down.right"
-
-    /// How far the resize-handle glyph sits from the card's own
-    /// bottom-right corner — as small as still reads as a corner detail
-    /// rather than being clipped by the card's own rounded corner. Not
-    /// just cosmetic: `PassthroughImageView` falls through a click to
-    /// `DraggableBackgroundView`'s own *move*-drag (the same as the
-    /// drag-handle indicator), so a click here only reaches native
-    /// edge-*resize* instead if it lands within `OverlayWindow`'s own
-    /// resize hit-region at the true frame edge — a margin native to
-    /// `.resizable` windows, narrower than this glyph's own size, and
-    /// outside this view hierarchy entirely to inspect or rely on
-    /// precisely. Sitting this close is the best fit achievable without
-    /// writing new resize-detection logic of its own, which the ticket
-    /// this shipped in deliberately ruled out.
-    private static let resizeHandleInset: CGFloat = 2
-
-    /// A custom diagonal resize cursor — AppKit has no public one (only
-    /// `.resizeLeftRight`/`.resizeUpDown`, neither diagonal), so this
-    /// builds one from the same SF Symbol the decorative glyph itself
-    /// uses, for visual consistency between the two.
-    private static let resizeCursor: NSCursor = {
-        let image = NSImage(systemSymbolName: resizeHandleSymbolName, accessibilityDescription: nil) ?? NSImage()
-        return NSCursor(image: image, hotSpot: NSPoint(x: image.size.width / 2, y: image.size.height / 2))
-    }()
-
     /// The inline volume slider's width once revealed beside the mute
     /// button — short enough to read as an inline reveal within the
     /// transport row, not a second full-width slider.
@@ -168,6 +174,17 @@ final class OverlayCardView: DraggableBackgroundView {
     /// reach exactly as far as the revealed slider's own right edge
     /// actually sits, not just the slider's bare width.
     private static let fullTransportRowSpacing: CGFloat = 20
+
+    /// The shared rendering for every control glyph — transport row, chrome
+    /// bar, mute, play/pause, lyrics (ADR-0015). A lighter weight and a
+    /// controlled point size, applied through `styleTransportButton` and
+    /// the few methods that reassign a glyph afterward (`updateMuteIcon`,
+    /// `updatePlayPauseIcon`), so the icons read smooth and evenly sized
+    /// rather than at AppKit's heavier default — the "sharp" look the live
+    /// Spotify comparison flagged. A first-pass weight to tune against
+    /// Spotify, not a locked value.
+    private static let controlSymbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        .applying(.init(scale: .medium))
 
     var onTogglePlayPause: (() -> Void)?
     var onSkipToNext: (() -> Void)?
@@ -246,16 +263,6 @@ final class OverlayCardView: DraggableBackgroundView {
     /// containing it.
     private var muteHoverTrackingArea: NSTrackingArea?
 
-    /// The decorative resize-handle glyph, bottom-right corner of the
-    /// card — shared by both layouts (unlike the chrome bar/transport
-    /// row, it has no layout-specific content, so one instance and one
-    /// hover-reveal alongside whichever layout's own chrome is currently
-    /// fading in/out suffices). A `PassthroughImageView`, so a click on it
-    /// falls through to `DraggableBackgroundView`/the window's own native
-    /// edge-resize, the same way the drag-handle indicators already do
-    /// for dragging.
-    private let resizeHandleImageView = PassthroughImageView()
-
     /// Full Layout's hover-revealed top chrome bar: the real system close
     /// button (ADR-0012), drag-handle indicator, and settings icon.
     private let fullTopChromeBar = NSView()
@@ -273,6 +280,20 @@ final class OverlayCardView: DraggableBackgroundView {
     private let compactSettingsButton = NSButton()
     private let compactTransportRow = NSView()
     private let compactMuteButton = NSButton()
+
+    /// Compact Layout's own Seek Bar (ADR-0015) — a slim slider pinned to
+    /// the bottom edge, always visible, wired to the same commit-on-release
+    /// seek path (`seekSliderChanged`/`isDraggingSeek`) as Full Layout's
+    /// `fullSeekSlider`. `configureSeek`/`updateSeek` now drive both, since
+    /// only one layout is ever on screen at a time.
+    private let compactSeekSlider = NSSlider()
+
+    /// The Scrim (ADR-0015) behind each layout's hover-revealed transport
+    /// controls — one per layout, faded in and out on the same hover as the
+    /// controls themselves (`revealChrome(_:)`), reset to invisible in
+    /// `update(layout:)` alongside the rest of the hover chrome.
+    private let compactControlsScrim = GradientScrimView()
+    private let fullControlsScrim = GradientScrimView()
 
     /// The window's one real system close button (ADR-0012) — there's
     /// only one for the whole window, unlike every other chrome-bar
@@ -487,7 +508,6 @@ final class OverlayCardView: DraggableBackgroundView {
         // adds it only once Full Layout is actually current.
 
         configureSettingsFace()
-        configureResizeHandle()
     }
 
     @available(*, unavailable)
@@ -510,14 +530,6 @@ final class OverlayCardView: DraggableBackgroundView {
         )
         addTrackingArea(area)
         trackingArea = area
-
-        // The resize-handle glyph's own cursor swap is handled by
-        // `resetCursorRects()`/`addCursorRect(_:cursor:)` instead of a
-        // tracking area — see that method's own doc comment for why.
-        // Its rect moves every time this card resizes, exactly the moment
-        // `updateTrackingAreas()` itself runs, so this is the right place
-        // to ask AppKit to re-evaluate it too.
-        window?.invalidateCursorRects(for: self)
 
         if let muteHoverTrackingArea {
             removeTrackingArea(muteHoverTrackingArea)
@@ -560,15 +572,12 @@ final class OverlayCardView: DraggableBackgroundView {
         muteHoverTrackingArea = muteArea
     }
 
-    /// Compact and Full Layout each reveal their own chrome bar and
-    /// transport row together, on the same hover — identical shapes, two
-    /// instances — alongside the shared resize-handle glyph. The mute
-    /// hover zone is nested independently of that reveal: entering/exiting
-    /// the mute zone only ever reveals or hides whichever of
-    /// `fullVolumeSlider`/`volumeSlider` belongs to the current layout. The
-    /// resize-handle glyph's own cursor swap isn't handled here at all —
-    /// see `resetCursorRects()`'s own doc comment for why — only its
-    /// alpha, alongside the rest of the card-wide reveal below.
+    /// Compact and Full Layout each reveal their own chrome bar, transport
+    /// row, and Scrim together, on the same hover — identical shapes, two
+    /// instances. The mute hover zone is nested independently of that
+    /// reveal: entering/exiting the mute zone only ever reveals or hides
+    /// whichever of `fullVolumeSlider`/`volumeSlider` belongs to the
+    /// current layout.
     override func mouseEntered(with event: NSEvent) {
         if event.trackingArea === muteHoverTrackingArea {
             revealVolumeSlider(true)
@@ -598,8 +607,8 @@ final class OverlayCardView: DraggableBackgroundView {
     /// included, so sliding it above its resting position hides it
     /// without any dedicated clipping view of its own. Neither bar's
     /// height ever changes, so this never grows the card or the window.
-    /// `resizeHandleImageView`/`fullControlsOverlay`/`compactTransportRow`
-    /// still just fade — only the two top chrome bars gain the slide.
+    /// The Scrim, `fullControlsOverlay`, and `compactTransportRow` still
+    /// just fade — only the two top chrome bars gain the slide.
     ///
     /// `allowsImplicitAnimation`, not a bare `.animator()` call the way
     /// the plain fades here still are: a constraint's own `constant` only
@@ -613,11 +622,13 @@ final class OverlayCardView: DraggableBackgroundView {
         let topConstraint = isFullLayout ? fullTopChromeBarTopConstraint : compactChromeBarTopConstraint
         let restingInset = isFullLayout ? Self.fullChromeBarRestingTopInset : Self.compactChromeBarRestingTopInset
 
+        let scrim = isFullLayout ? fullControlsScrim : compactControlsScrim
+
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.crossfadeDuration
             context.allowsImplicitAnimation = true
 
-            resizeHandleImageView.animator().alphaValue = reveal ? 1 : 0
+            scrim.animator().alphaValue = reveal ? 1 : 0
             chromeBar.animator().alphaValue = reveal ? 1 : 0
             topConstraint?.constant = reveal ? restingInset : restingInset - Self.chromeBarHeight
             chromeBar.superview?.layoutSubtreeIfNeeded()
@@ -628,28 +639,6 @@ final class OverlayCardView: DraggableBackgroundView {
                 compactTransportRow.animator().alphaValue = reveal ? 1 : 0
             }
         }
-    }
-
-    /// Registers the resize-handle glyph's own cursor rect — AppKit swaps
-    /// to `Self.resizeCursor` purely by the mouse's current position
-    /// against this rect, and restores whatever cursor was active before
-    /// on its own once the mouse leaves it, with no enter/exit event of
-    /// this view's own involved either way. Deliberately not a
-    /// `mouseEntered`/`mouseExited` tracking area the way the rest of this
-    /// view's hover behavior is: this glyph's rect moves on every single
-    /// frame of a live resize drag, and a tracking area recreated (removed
-    /// then re-added) under a cursor that's already sitting inside it
-    /// doesn't get a synthetic enter event — AppKit only fires those on
-    /// genuine boundary-crossing motion, not retroactively for a freshly
-    /// rebuilt area — which is exactly why the old approach only swapped
-    /// the cursor intermittently. Cursor rects have no such gap: AppKit
-    /// re-evaluates them fresh, by position, every time they're
-    /// invalidated (`updateTrackingAreas()` does that on this glyph's
-    /// behalf, since both need re-evaluating at the same geometry-driven
-    /// cadence).
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        addCursorRect(resizeHandleImageView.frame, cursor: Self.resizeCursor)
     }
 
     /// Fades whichever of `fullVolumeSlider`/`volumeSlider` belongs to the
@@ -731,7 +720,8 @@ final class OverlayCardView: DraggableBackgroundView {
         // position a resize happened to interrupt it at otherwise, it
         // would reappear pre-slid on the next real hover instead of
         // starting from just above like `revealChrome(_:)` expects.
-        resizeHandleImageView.alphaValue = 0
+        compactControlsScrim.alphaValue = 0
+        fullControlsScrim.alphaValue = 0
         compactChromeBar.alphaValue = 0
         compactTransportRow.alphaValue = 0
         fullControlsOverlay.alphaValue = 0
@@ -774,20 +764,13 @@ final class OverlayCardView: DraggableBackgroundView {
             // otherwise bury whichever of these two is currently on top —
             // forcing both hidden regardless of z-order sidesteps that
             // entirely, since a hidden view never draws no matter how it
-            // stacks. `resizeHandleImageView` needs the same treatment —
-            // unlike `lyricsButton`/`fullLyricsButton`, it has no reason to
-            // stay reachable over the Lyrics/Settings Face, and being a
-            // sibling of `self` (not nested in `compactFace`/`fullFace`)
-            // means it isn't hidden by either of those cascading already.
+            // stacks.
             compactFace.isHidden = true
             fullFace.isHidden = true
-            resizeHandleImageView.isHidden = true
             return
         }
 
         // Reachable again now that neither face above is showing.
-        resizeHandleImageView.isHidden = false
-
         compactFace.isHidden = isFullLayout
         fullFace.isHidden = !isFullLayout
     }
@@ -944,7 +927,7 @@ final class OverlayCardView: DraggableBackgroundView {
 
     func update(isPlaying: Bool) {
         let symbolName = isPlaying ? "pause.fill" : "play.fill"
-        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Play/Pause")
+        let image = controlImage(symbolName, accessibilityDescription: "Play/Pause")
         playPauseButton.image = image
         fullPlayPauseButton.image = image
     }
@@ -962,11 +945,6 @@ final class OverlayCardView: DraggableBackgroundView {
         crossfade(from: activeNowPlayingFace, to: lyricsFace)
         lyricsButton.contentTintColor = .white
         fullLyricsButton.contentTintColor = .white
-        // Unlike `lyricsButton`/`fullLyricsButton`, the resize-handle glyph
-        // has no reason to stay reachable over the Lyrics Face, and being
-        // a sibling of `self` (not nested in `compactFace`/`fullFace`)
-        // means it isn't hidden by either of those cascading already.
-        resizeHandleImageView.isHidden = true
     }
 
     /// Crossfades back to whichever Now Playing content is current.
@@ -974,7 +952,6 @@ final class OverlayCardView: DraggableBackgroundView {
         crossfade(from: lyricsFace, to: activeNowPlayingFace)
         lyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
         fullLyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
-        resizeHandleImageView.isHidden = false
     }
 
     /// What the Lyrics face shows — forwarded straight to `LyricsCardView`,
@@ -984,14 +961,16 @@ final class OverlayCardView: DraggableBackgroundView {
         lyricsFace.update(with: content)
     }
 
-    /// Sets Full Layout's seek slider range to the current Track's
+    /// Sets both layouts' seek slider range to the current Track's
     /// duration. Called once per Track, not on every Anchor. Compact
-    /// Layout has no seek slider of its own to set — seeking is
-    /// exclusively a Full Layout capability.
+    /// Layout now has its own Seek Bar (ADR-0015), so both sliders are set
+    /// here — only one is ever on screen at a time.
     func configureSeek(duration: TimeInterval) {
         trackDuration = max(duration, 1)
         fullSeekSlider.minValue = 0
         fullSeekSlider.maxValue = trackDuration
+        compactSeekSlider.minValue = 0
+        compactSeekSlider.maxValue = trackDuration
     }
 
     /// Moves Full Layout's seek slider thumb to `position`, and its
@@ -1001,6 +980,7 @@ final class OverlayCardView: DraggableBackgroundView {
     func updateSeek(position: TimeInterval) {
         guard !isDraggingSeek else { return }
         fullSeekSlider.doubleValue = position
+        compactSeekSlider.doubleValue = position
         elapsedLabel.stringValue = PlaybackTimeFormat.string(forSeconds: position)
         remainingLabel.stringValue = "-" + PlaybackTimeFormat.string(forSeconds: trackDuration - position)
     }
@@ -1035,10 +1015,7 @@ final class OverlayCardView: DraggableBackgroundView {
     /// state reads at a glance without needing to also check the slider.
     private func updateMuteIcon() {
         let symbolName = isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"
-        let image = NSImage(
-            systemSymbolName: symbolName,
-            accessibilityDescription: isMuted ? "Unmute" : "Mute"
-        )
+        let image = controlImage(symbolName, accessibilityDescription: isMuted ? "Unmute" : "Mute")
         fullMuteButton.image = image
         compactMuteButton.image = image
     }
@@ -1138,6 +1115,26 @@ final class OverlayCardView: DraggableBackgroundView {
 
         compactFace.translatesAutoresizingMaskIntoConstraints = false
         compactFace.addSubview(row)
+
+        // Added after `row` (so it dims the disc/title beneath it) but
+        // before the chrome/transport rows built in later methods (so
+        // those controls stay above it) — see `GradientScrimView`.
+        compactControlsScrim.setGradient(topAlpha: 0, bottomAlpha: 0.55)
+        compactControlsScrim.alphaValue = 0
+        compactControlsScrim.translatesAutoresizingMaskIntoConstraints = false
+        compactFace.addSubview(compactControlsScrim)
+
+        // The always-visible Seek Bar — slim (`.mini`), pinned to the
+        // bottom edge, above the scrim so it stays visible while the scrim
+        // fades in behind the hover controls.
+        styleSlider(compactSeekSlider, min: 0, max: 1)
+        compactSeekSlider.controlSize = .mini
+        compactSeekSlider.target = self
+        compactSeekSlider.action = #selector(seekSliderChanged)
+        compactSeekSlider.translatesAutoresizingMaskIntoConstraints = false
+        suppressIntrinsicSizeGrowthPressure(compactSeekSlider)
+        compactFace.addSubview(compactSeekSlider)
+
         addSubview(compactFace)
 
         // See `preferredFill(_:upTo:constant:)`'s own comment — without
@@ -1167,6 +1164,15 @@ final class OverlayCardView: DraggableBackgroundView {
             compactFace.trailingAnchor.constraint(equalTo: trailingAnchor),
             compactFace.topAnchor.constraint(equalTo: topAnchor),
             compactFace.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            compactControlsScrim.leadingAnchor.constraint(equalTo: compactFace.leadingAnchor),
+            compactControlsScrim.trailingAnchor.constraint(equalTo: compactFace.trailingAnchor),
+            compactControlsScrim.topAnchor.constraint(equalTo: compactFace.topAnchor),
+            compactControlsScrim.bottomAnchor.constraint(equalTo: compactFace.bottomAnchor),
+
+            compactSeekSlider.leadingAnchor.constraint(equalTo: compactFace.leadingAnchor, constant: 12),
+            compactSeekSlider.trailingAnchor.constraint(equalTo: compactFace.trailingAnchor, constant: -12),
+            compactSeekSlider.bottomAnchor.constraint(equalTo: compactFace.bottomAnchor, constant: -4),
 
             lyricsButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             lyricsButton.centerYAnchor.constraint(equalTo: row.centerYAnchor),
@@ -1288,12 +1294,11 @@ final class OverlayCardView: DraggableBackgroundView {
         remainingLabel.translatesAutoresizingMaskIntoConstraints = false
         remainingLabel.setContentHuggingPriority(.required, for: .horizontal)
 
-        // The only seek slider anywhere in the Overlay — Compact Layout
-        // has none of its own; seeking is exclusively a Full Layout
-        // capability. `seekSliderChanged`/`isDraggingSeek` still exist as
-        // the commit-on-release gate `volumeSliderChanged`/
-        // `isDraggingVolume` mirrors for the mute/volume control's own
-        // two instances.
+        // Full Layout's seek slider — Compact Layout has its own slim one
+        // now too (ADR-0015), both sharing `seekSliderChanged`/
+        // `isDraggingSeek` as the commit-on-release gate, the same way
+        // `volumeSliderChanged`/`isDraggingVolume` gates the mute/volume
+        // control's own two instances.
         styleSlider(fullSeekSlider, min: 0, max: 1)
         fullSeekSlider.target = self
         fullSeekSlider.action = #selector(seekSliderChanged)
@@ -1316,6 +1321,18 @@ final class OverlayCardView: DraggableBackgroundView {
         // NSView z-order follows subview array order.
         fullFace.addSubview(fullArtworkBackgroundView)
         fullFace.addSubview(fullArtworkView)
+
+        // The Scrim over the artwork square (ADR-0015) — added after the
+        // artwork so it dims it, before the controls overlay/chrome bar
+        // (built in the two `configure…` calls below) so those stay above
+        // it. Rounded to match the square it covers.
+        fullControlsScrim.setGradient(topAlpha: 0.15, bottomAlpha: 0.55)
+        fullControlsScrim.alphaValue = 0
+        fullControlsScrim.layer?.cornerRadius = Self.fullArtworkCornerRadius
+        fullControlsScrim.layer?.masksToBounds = true
+        fullControlsScrim.translatesAutoresizingMaskIntoConstraints = false
+        fullFace.addSubview(fullControlsScrim)
+
         fullFace.addSubview(seekRow)
         fullFace.addSubview(fullTextStack)
         configureFullControlsOverlay()
@@ -1363,9 +1380,21 @@ final class OverlayCardView: DraggableBackgroundView {
             fullTextStack.trailingAnchor, upTo: fullLyricsButton.leadingAnchor, constant: -8
         )
 
+        // The square tracks the Overlay's width edge-to-edge until it hits
+        // `fullArtworkMaxWidth`, then stops and centers — leading/trailing
+        // are `>=`/`<=` insets (a floor on the margins) rather than fixed,
+        // so at wider Overlays the required max-width constraint wins and
+        // the square sits centered with room to spare. See
+        // `fullArtworkMaxWidth`'s own comment for why this cap is what
+        // keeps `thresholdHeight` independent of the width ceiling.
+        let preferredArtworkWidth = fullArtworkBackgroundView.widthAnchor.constraint(equalTo: fullFace.widthAnchor, constant: -32)
+        preferredArtworkWidth.priority = .defaultHigh
         fullLayoutContentConstraints = [
-            fullArtworkBackgroundView.leadingAnchor.constraint(equalTo: fullFace.leadingAnchor, constant: 16),
-            fullArtworkBackgroundView.trailingAnchor.constraint(equalTo: fullFace.trailingAnchor, constant: -16),
+            fullArtworkBackgroundView.leadingAnchor.constraint(greaterThanOrEqualTo: fullFace.leadingAnchor, constant: 16),
+            fullArtworkBackgroundView.trailingAnchor.constraint(lessThanOrEqualTo: fullFace.trailingAnchor, constant: -16),
+            fullArtworkBackgroundView.centerXAnchor.constraint(equalTo: fullFace.centerXAnchor),
+            fullArtworkBackgroundView.widthAnchor.constraint(lessThanOrEqualToConstant: Self.fullArtworkMaxWidth),
+            preferredArtworkWidth,
             fullArtworkBackgroundView.heightAnchor.constraint(equalTo: fullArtworkBackgroundView.widthAnchor),
             fullArtworkBackgroundView.topAnchor.constraint(equalTo: fullFace.topAnchor, constant: 16),
             // A minimum gap, not a fixed position — the bottom rows below
@@ -1385,6 +1414,11 @@ final class OverlayCardView: DraggableBackgroundView {
             fullArtworkView.centerYAnchor.constraint(equalTo: fullArtworkBackgroundView.centerYAnchor),
             fullArtworkView.widthAnchor.constraint(equalTo: fullArtworkBackgroundView.widthAnchor, multiplier: Self.fullArtworkForegroundScale),
             fullArtworkView.heightAnchor.constraint(equalTo: fullArtworkView.widthAnchor),
+
+            fullControlsScrim.leadingAnchor.constraint(equalTo: fullArtworkBackgroundView.leadingAnchor),
+            fullControlsScrim.trailingAnchor.constraint(equalTo: fullArtworkBackgroundView.trailingAnchor),
+            fullControlsScrim.topAnchor.constraint(equalTo: fullArtworkBackgroundView.topAnchor),
+            fullControlsScrim.bottomAnchor.constraint(equalTo: fullArtworkBackgroundView.bottomAnchor),
 
             seekRow.leadingAnchor.constraint(equalTo: fullFace.leadingAnchor, constant: 16),
             seekRow.trailingAnchor.constraint(equalTo: fullFace.trailingAnchor, constant: -16),
@@ -1672,7 +1706,7 @@ final class OverlayCardView: DraggableBackgroundView {
     private func configureChromeBar(
         _ bar: NSView, settingsButton settings: NSButton, dragHandle: PassthroughImageView
     ) -> [NSLayoutConstraint] {
-        dragHandle.image = NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: nil)
+        dragHandle.image = controlImage("line.3.horizontal")
         dragHandle.contentTintColor = .white.withAlphaComponent(0.4)
         dragHandle.translatesAutoresizingMaskIntoConstraints = false
 
@@ -1758,25 +1792,6 @@ final class OverlayCardView: DraggableBackgroundView {
             compactChromeBar.addSubview(closeButton)
             NSLayoutConstraint.activate(closeButtonCompactConstraints)
         }
-    }
-
-    /// The decorative resize-handle glyph — hover-revealed alongside
-    /// whichever layout's own chrome is currently fading in/out (see
-    /// `mouseEntered`/`mouseExited`), reset to invisible in
-    /// `update(layout:)` the same way that chrome already is.
-    private func configureResizeHandle() {
-        resizeHandleImageView.image = NSImage(systemSymbolName: Self.resizeHandleSymbolName, accessibilityDescription: nil)
-        resizeHandleImageView.contentTintColor = .white.withAlphaComponent(0.4)
-        resizeHandleImageView.alphaValue = 0
-        resizeHandleImageView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(resizeHandleImageView)
-
-        NSLayoutConstraint.activate([
-            resizeHandleImageView.widthAnchor.constraint(equalToConstant: Self.resizeHandleSize),
-            resizeHandleImageView.heightAnchor.constraint(equalToConstant: Self.resizeHandleSize),
-            resizeHandleImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.resizeHandleInset),
-            resizeHandleImageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Self.resizeHandleInset),
-        ])
     }
 
     /// The settings panel: one clearly-labelled toggle for the blurred
@@ -1890,7 +1905,10 @@ final class OverlayCardView: DraggableBackgroundView {
         // position instead.
         compactTransportRowStackedConstraints = [
             compactTransportRow.centerXAnchor.constraint(equalTo: compactFace.centerXAnchor),
-            compactTransportRow.bottomAnchor.constraint(equalTo: compactFace.bottomAnchor, constant: -8),
+            // Sits just above the always-visible Seek Bar (ADR-0015), not
+            // on the bottom edge, so the two never overlap when the
+            // transport row fades in on hover.
+            compactTransportRow.bottomAnchor.constraint(equalTo: compactSeekSlider.topAnchor, constant: -2),
         ]
         compactTransportRowInlineConstraints = [
             compactTransportRow.trailingAnchor.constraint(equalTo: compactFace.trailingAnchor, constant: -16),
@@ -1918,6 +1936,23 @@ final class OverlayCardView: DraggableBackgroundView {
         button.isBordered = false
         button.bezelStyle = .regularSquare
         button.contentTintColor = .white
+        // Applies the shared, smoother glyph rendering to whatever image
+        // the caller already assigned (every caller sets `button.image`
+        // before calling this). Methods that reassign a glyph later
+        // (`update(isPlaying:)`, `updateMuteIcon`, the chrome drag handle)
+        // build it through `controlImage(_:accessibilityDescription:)`
+        // instead, so the same configuration is never forgotten.
+        button.image = button.image?.withSymbolConfiguration(Self.controlSymbolConfiguration)
+    }
+
+    /// A control glyph built through the shared `SymbolConfiguration`
+    /// (ADR-0015) — the one place that configuration is applied to a
+    /// freshly-created image, so a glyph reassigned outside
+    /// `styleTransportButton` can't silently render at AppKit's heavy
+    /// default by forgetting the call.
+    private func controlImage(_ systemSymbolName: String, accessibilityDescription: String? = nil) -> NSImage? {
+        NSImage(systemSymbolName: systemSymbolName, accessibilityDescription: accessibilityDescription)?
+            .withSymbolConfiguration(Self.controlSymbolConfiguration)
     }
 
     private func styleSlider(_ slider: NSSlider, min: Double, max: Double) {
@@ -1960,7 +1995,6 @@ final class OverlayCardView: DraggableBackgroundView {
         wasShowingLyricsBeforeSettings = !lyricsFace.isHidden
         let current = wasShowingLyricsBeforeSettings ? lyricsFace : activeNowPlayingFace
         crossfade(from: current, to: settingsFace)
-        resizeHandleImageView.isHidden = true
     }
 
     /// Returns to Lyrics or Now Playing content, matching whichever was
@@ -1972,7 +2006,6 @@ final class OverlayCardView: DraggableBackgroundView {
     @objc private func settingsDoneTapped() {
         let destination = wasShowingLyricsBeforeSettings ? lyricsFace : activeNowPlayingFace
         crossfade(from: settingsFace, to: destination)
-        resizeHandleImageView.isHidden = false
     }
 
     @objc private func blurredBackgroundToggled(_ sender: NSSwitch) {

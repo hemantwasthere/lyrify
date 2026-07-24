@@ -71,7 +71,7 @@ _Avoid_: Delay, latency adjustment, calibration
 ### Display
 
 **Overlay**:
-The single always-visible companion widget for the current Track: draggable anywhere by clicking and dragging its body directly, resizable by dragging its edge within sensible minimum and maximum bounds. A real titled window, not a borderless non-activating panel — it can become key on click and shows a genuine native close button, at the cost of being able to take keyboard focus like any other window (ADR-0012 reopens ADR-0006's opposite guarantee). Follows the listener across every desktop Space and fullscreen app.
+The single always-visible companion widget for the current Track: draggable anywhere by clicking and dragging its body directly, resizable by dragging its native window edges and corners within sensible minimum and maximum bounds (no decorative resize handle of its own — dropped for Mini Player parity, ADR-0015). A real titled window, not a borderless non-activating panel — it can become key on click and shows a genuine native close button, at the cost of being able to take keyboard focus like any other window (ADR-0012 reopens ADR-0006's opposite guarantee). Follows the listener across every desktop Space and fullscreen app.
 _Avoid_: HUD (implies non-interactive; this one is dragged and clicked directly)
 
 **Now Playing Face**:
@@ -79,7 +79,7 @@ The Overlay's resting face: a small spinning Disc of the current Track's album a
 _Avoid_: Minimized, collapsed (retired terms — see ADR-0008)
 
 **Compact Layout**:
-The Now Playing Face's rendering below Full Layout's size threshold: a thumbnail with the current Track's title and artist beside it, and controls revealed on hover. Each control in its chrome and transport row disappears at its own independent Breakpoint as the Overlay narrows, continuously recomputed on every resize — not a small number of named tiers switched between as a whole (ADR-0013 retires ADR-0010's CompactTier).
+The Now Playing Face's rendering below Full Layout's size threshold, shaped to be Spotify's own small, wide-and-short Mini Player (ADR-0015): a disc on the left, the current Track's title and artist beside it, a lyrics button on the right, a slim always-visible Seek Bar pinned to the bottom edge, and a transport row that fades in over a Scrim on hover. Each control in its chrome and transport row disappears at its own independent Breakpoint as the Overlay narrows, continuously recomputed on every resize — not a small number of named tiers switched between as a whole (ADR-0013 retires ADR-0010's CompactTier). The width ceiling is set wide enough (ADR-0015) that the Overlay can actually reach the Mini Player's proportions.
 _Avoid_: Minimized, collapsed (retired terms — see ADR-0008); Tier, CompactTier (retired — see ADR-0013)
 
 **Breakpoint**:
@@ -87,8 +87,16 @@ The width or height below which one specific control in Compact Layout's chrome 
 _Avoid_: Tier (a Breakpoint governs one control; a tier bundled several together)
 
 **Full Layout**:
-The Now Playing Face's rendering at larger sizes (at or above `OverlayLayout.thresholdHeight`): a big square artwork area, an always-visible seek bar, and additional chrome — a hover-revealed top bar (hide, drag handle, settings) and transport row (mute, shuffle, previous, play/pause, next, repeat, share) overlaid on the artwork — styled after Spotify's own Mini Player.
+The Now Playing Face's rendering at larger sizes (at or above `OverlayLayout.thresholdHeight`): a big square artwork area — capped to a maximum width and centered within any wider Overlay (ADR-0015), so its structural minimum no longer grows with the Overlay's width — an always-visible Seek Bar, and additional chrome — a hover-revealed top bar (hide, drag handle, settings) and transport row (mute, shuffle, previous, play/pause, next, repeat, share) overlaid on the artwork over a Scrim — styled after Spotify's own Mini Player.
 _Avoid_: Expanded (retired term — see ADR-0008)
+
+**Seek Bar**:
+The slider that shows and scrubs the current Playback Position. Present in both Full Layout (with elapsed/remaining time labels) and Compact Layout (a slim line pinned to the bottom edge). Both commit a seek only on mouse-up, never on every intermediate value, and ignore external position updates while being dragged.
+_Avoid_: Scrubber, progress bar (the second reads as read-only; this one seeks)
+
+**Scrim**:
+The dark gradient behind either layout's hover-revealed transport controls, faded in and out on the same hover as the controls themselves. Exists purely for legibility — it keeps light control glyphs readable over bright album art (ADR-0015).
+_Avoid_: Overlay (that word is the whole widget), tint, shade
 
 **Disc**:
 The small circle of the current Track's album art shown on the Now Playing Face, spinning while the Track plays and freezing at its current angle when paused, resuming from that angle on play. Briefly a rounded square under ADR-0009's Mini Player–style redesign; ADR-0014 made it a circle again, since a rotating shape with corners visibly wobbles as it spins and a circle doesn't. Full Layout's own artwork square is unrelated — it never spins, and keeps the square shape ADR-0009 gave it.

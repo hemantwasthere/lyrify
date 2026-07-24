@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="discBody" cx="38%" cy="32%" r="75%">
+      <stop offset="0%" stop-color="#263c31"/>
+      <stop offset="100%" stop-color="#0f1815"/>
+    </radialGradient>
+    <linearGradient id="plate" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#16261f"/>
+      <stop offset="100%" stop-color="#0c1512"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="226" ry="226" fill="url(#plate)"/>
+
+  <g transform="translate(512 512)">
+    <circle cx="0" cy="0" r="372" fill="url(#discBody)"/>
+    <circle cx="0" cy="0" r="372" fill="none" stroke="#3a5346" stroke-width="4"/>
+
+    <circle cx="0" cy="0" r="264" fill="none" stroke="#4a6357" stroke-width="13" opacity="0.55"/>
+    <circle cx="0" cy="0" r="264" fill="none" stroke="#e6a339" stroke-width="16"
+            stroke-dasharray="330 1329" stroke-linecap="round"
+            transform="rotate(-90)"/>
+    <circle cx="250.5" cy="-83.3" r="15" fill="#e6a339"/>
+
+    <circle cx="0" cy="0" r="51" fill="#e6a339"/>
+    <circle cx="0" cy="0" r="15" fill="#0f1815"/>
+  </g>
+</svg>

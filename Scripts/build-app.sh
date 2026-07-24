@@ -19,6 +19,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BUILD_DIR/LyrifyApp" "$APP/Contents/MacOS/LyrifyApp"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/Resources/Lyrify.icns" "$APP/Contents/Resources/Lyrify.icns"
 
 # Ad-hoc signature. A stable signature matters more than it looks: macOS keys
 # the granted Automation permission to it, so an unsigned rebuild would

@@ -10,6 +10,8 @@
 	<string>com.hemantwasthere.lyrify</string>
 	<key>CFBundleExecutable</key>
 	<string>LyrifyApp</string>
+	<key>CFBundleIconFile</key>
+	<string>Lyrify</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="bgGlow" cx="24%" cy="30%" r="85%">
+      <stop offset="0%" stop-color="#1b2e26"/>
+      <stop offset="100%" stop-color="#0f1815"/>
+    </radialGradient>
+    <radialGradient id="discBody" cx="38%" cy="32%" r="75%">
+      <stop offset="0%" stop-color="#2a4236"/>
+      <stop offset="100%" stop-color="#10201b"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="630" fill="url(#bgGlow)"/>
+
+  <g transform="translate(195 315)">
+    <circle cx="0" cy="0" r="150" fill="url(#discBody)"/>
+    <circle cx="0" cy="0" r="150" fill="none" stroke="#3a5346" stroke-width="2"/>
+    <circle cx="0" cy="0" r="106" fill="none" stroke="#4a6357" stroke-width="6" opacity="0.55"/>
+    <circle cx="0" cy="0" r="106" fill="none" stroke="#e6a339" stroke-width="7"
+            stroke-dasharray="133 533" stroke-linecap="round"
+            transform="rotate(-90)"/>
+    <circle cx="101" cy="-33.6" r="6" fill="#e6a339"/>
+    <circle cx="0" cy="0" r="21" fill="#e6a339"/>
+    <circle cx="0" cy="0" r="6" fill="#10201b"/>
+  </g>
+
+  <text x="415" y="270" font-family="Georgia, 'Iowan Old Style', serif" font-size="76" font-weight="600" fill="#ece4d3">Lyrify</text>
+  <text x="417" y="325" font-family="Georgia, 'Iowan Old Style', serif" font-size="34" fill="#c9c0ac">Lyrics that keep up</text>
+  <text x="417" y="368" font-family="Georgia, 'Iowan Old Style', serif" font-size="34" fill="#c9c0ac">with <tspan font-style="italic" fill="#e6a339">the music.</tspan></text>
+  <text x="417" y="425" font-family="ui-monospace, Menlo, monospace" font-size="21" letter-spacing="2" fill="#7d9285">MENU BAR APP FOR SPOTIFY · MACOS</text>
+</svg>

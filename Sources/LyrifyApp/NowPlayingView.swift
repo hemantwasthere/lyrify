@@ -196,7 +196,7 @@ final class NowPlayingView: DraggableBackgroundView {
             // controls arrive. They ease down into it from a few points higher,
             // which is the whole of Spotify's animation; sliding a black panel
             // down over black was only ever invisible work.
-            self.chromeSlide.animator().constant = revealed ? Self.panelMargin : Self.panelMargin - 8
+            self.chromeSlide.animator().constant = revealed ? 0 : -8
             self.chromeBackdrop.animator().alphaValue = revealed ? 1 : 0
             self.closeButton.animator().alphaValue = revealed ? 1 : 0
             self.dotsHorizontal.animator().alphaValue = revealed ? 1 : 0
@@ -521,10 +521,13 @@ final class NowPlayingView: DraggableBackgroundView {
         // the artwork now, so without this the buttons would sit on the cover.
         chromeBackdrop.wantsLayer = true
         chromeBackdrop.layer?.backgroundColor = NSColor.black.cgColor
-        // Rounded on every corner and inset to the artwork's own width, so it
-        // arrives as a rounded bar lying on the cover. Spanning the full card
-        // with square corners is what left a hard rule across the artwork.
-        chromeBackdrop.layer?.cornerRadius = 13
+        // Flush with the card: rounded at the head to follow the card's own
+        // corners, square at the foot. The curve at the join belongs to the
+        // artwork beneath, which rounds *away* from the bar — rounding the bar's
+        // own foot instead curved it the opposite way and left it looking like a
+        // detached pill lying on the cover.
+        chromeBackdrop.layer?.cornerRadius = 14
+        chromeBackdrop.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         chromeBackdrop.layer?.masksToBounds = true
         chromeBackdrop.alphaValue = 0
         chromeBackdrop.translatesAutoresizingMaskIntoConstraints = false
@@ -542,11 +545,11 @@ final class NowPlayingView: DraggableBackgroundView {
 
         // The controls ease down into the strip; the constant is animated rather
         // than the alpha alone, so they arrive rather than simply appear.
-        chromeSlide = chromeBackdrop.topAnchor.constraint(equalTo: plate.topAnchor, constant: Self.panelMargin - 8)
+        chromeSlide = chromeBackdrop.topAnchor.constraint(equalTo: plate.topAnchor, constant: -8)
         NSLayoutConstraint.activate([
             chromeSlide,
-            chromeBackdrop.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: Self.panelMargin),
-            chromeBackdrop.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -Self.panelMargin),
+            chromeBackdrop.leadingAnchor.constraint(equalTo: plate.leadingAnchor),
+            chromeBackdrop.trailingAnchor.constraint(equalTo: plate.trailingAnchor),
             chromeBackdrop.heightAnchor.constraint(equalToConstant: Self.chromeHeight),
         ])
     }
@@ -750,10 +753,11 @@ final class NowPlayingView: DraggableBackgroundView {
     private func buildConstraintSets(in plate: NSView) {
         let pm = Self.panelMargin
         let tm = Self.textMargin
-        // The same inset as the left and right edges, and it never changes. No
-        // strip is held open above the artwork: the chrome bar arrives *over*
-        // this corner on hover and leaves again, so nothing below it ever moves.
-        artTop = artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: pm)
+        // Below the bar, and fixed there. The curve at the join is this panel's
+        // own top corners rounding away from the bar, and they can only be seen
+        // if the panel starts where the bar ends — behind it they are covered,
+        // which is what left a straight rule across the cover.
+        artTop = artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: Self.chromeHeight)
 
         portraitConstraints = [
             closeButton.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: 10),

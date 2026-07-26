@@ -30,7 +30,17 @@ enum SpotifyPalette {
 
     /// The tint behind the art before any artwork is known — a neutral lift over
     /// `base`, so the gradient never disappears entirely between Tracks.
-    static let fallbackAccent = NSColor(srgbRed: 0.18, green: 0.18, blue: 0.20, alpha: 1)
+    static let fallbackAccent = NSColor(srgbRed: 0.28, green: 0.28, blue: 0.29, alpha: 1)
+
+    /// The same colour with its hue removed. Spotify's "Background color" switch
+    /// does not black the panel out — turning it off leaves the identical wash in
+    /// neutral grey, which is what it measures as with the switch down.
+    static func desaturated(_ color: NSColor) -> NSColor {
+        guard let srgb = color.usingColorSpace(.sRGB) else { return color }
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        return NSColor(hue: hue, saturation: 0, brightness: brightness, alpha: 1)
+    }
 
     /// The dominant colour of `image`, saturated and darkened into something
     /// safe to put white text on. Spotify's miniplayer tints the panel behind
@@ -50,10 +60,16 @@ enum SpotifyPalette {
         var alpha: CGFloat = 0
         srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
 
+        // Measured against Spotify's own panel: a dark green cover gives it a
+        // near-neutral grey (R=G=B=0.28), a bright outdoor one a pale lavender.
+        // So the tint is the artwork heavily *desaturated* and left roughly at
+        // its own brightness — not pushed toward a saturated colour, which is
+        // what made this card read as muddy brown where Spotify's reads as a
+        // soft wash.
         return NSColor(
             hue: hue,
-            saturation: min(max(saturation, 0.30), 0.70),
-            brightness: min(max(brightness, 0.20), 0.40),
+            saturation: min(saturation, 0.18),
+            brightness: min(max(brightness * 1.1, 0.24), 0.68),
             alpha: 1
         )
     }

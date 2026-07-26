@@ -42,7 +42,9 @@ final class NowPlayingView: DraggableBackgroundView {
     private static let widthForShuffle: CGFloat = 450
     private static let widthForShare: CGFloat = 600
 
-    private static let margin: CGFloat = 12
+    /// Spotify insets its panel this far from the card edge; ours sat at 12,
+    /// which read as a noticeably fatter border at the same width.
+    private static let margin: CGFloat = 8
     /// Matches the black strip Spotify leaves above its artwork at rest.
     private static let chromeHeight: CGFloat = 22
 
@@ -189,6 +191,7 @@ final class NowPlayingView: DraggableBackgroundView {
             // which is the whole of Spotify's animation; sliding a black panel
             // down over black was only ever invisible work.
             self.chromeSlide.animator().constant = revealed ? 0 : -6
+            self.chromeBackdrop.animator().alphaValue = revealed ? 1 : 0
             self.closeButton.animator().alphaValue = revealed ? 1 : 0
             self.dotsHorizontal.animator().alphaValue = revealed ? 1 : 0
             self.dotsVertical.animator().alphaValue = revealed ? 1 : 0
@@ -224,7 +227,7 @@ final class NowPlayingView: DraggableBackgroundView {
         artView.contentTintColor = nil
         artView.image = image
         lastAccent = SpotifyPalette.accent(from: image)
-        setAccent(isBackgroundColorEnabled ? lastAccent : SpotifyPalette.base)
+        setAccent(isBackgroundColorEnabled ? lastAccent : SpotifyPalette.desaturated(lastAccent))
     }
 
     func updatePlaceholder() {
@@ -447,11 +450,11 @@ final class NowPlayingView: DraggableBackgroundView {
         // clear at the top, which is what stops the fade reading as a hard band
         // across the middle of the cover.
         scrimLayer.colors = [
-            NSColor.black.withAlphaComponent(0.40).cgColor,
-            NSColor.black.withAlphaComponent(0.45).cgColor,
-            NSColor.black.withAlphaComponent(0.58).cgColor,
-            NSColor.black.withAlphaComponent(0.73).cgColor,
-            NSColor.black.withAlphaComponent(0.88).cgColor,
+            NSColor.black.withAlphaComponent(0.30).cgColor,
+            NSColor.black.withAlphaComponent(0.38).cgColor,
+            NSColor.black.withAlphaComponent(0.56).cgColor,
+            NSColor.black.withAlphaComponent(0.78).cgColor,
+            NSColor.black.withAlphaComponent(0.94).cgColor,
         ]
         scrimLayer.locations = [0, 0.1, 0.4, 0.7, 1]
         scrimLayer.startPoint = CGPoint(x: 0.5, y: 1)
@@ -465,10 +468,14 @@ final class NowPlayingView: DraggableBackgroundView {
         // The cover is a centred square that fits the panel, never filling it —
         // Spotify letterboxes it on the tint rather than cropping.
         let square = artView.widthAnchor.constraint(equalTo: artView.heightAnchor)
-        let fitWidth = artView.widthAnchor.constraint(lessThanOrEqualTo: artPanel.widthAnchor, constant: -16)
-        let fitHeight = artView.heightAnchor.constraint(lessThanOrEqualTo: artPanel.heightAnchor, constant: -16)
-        let growWidth = artView.widthAnchor.constraint(equalTo: artPanel.widthAnchor, constant: -16)
-        let growHeight = artView.heightAnchor.constraint(equalTo: artPanel.heightAnchor, constant: -16)
+        let fitWidth = artView.widthAnchor.constraint(lessThanOrEqualTo: artPanel.widthAnchor, constant: -12)
+        let fitHeight = artView.heightAnchor.constraint(lessThanOrEqualTo: artPanel.heightAnchor, constant: -12)
+        // Measured off Spotify: the cover takes about 85% of the panel's height
+        // and a little over half its width, leaving the wash visible all around
+        // it. Ours filled the panel to within 8pt, which is why the cover looked
+        // so much larger at the same card width.
+        let growWidth = artView.widthAnchor.constraint(equalTo: artPanel.heightAnchor, multiplier: 0.85)
+        let growHeight = artView.heightAnchor.constraint(equalTo: artPanel.heightAnchor, multiplier: 0.85)
         // Both of these only ever mean "take what room there is". They must stay
         // *below* the strength at which AppKit will resize the window to oblige:
         // paired with the required square above, two high-priority grows demand a
@@ -500,9 +507,14 @@ final class NowPlayingView: DraggableBackgroundView {
     }
 
     private func buildChrome(in plate: NSView) {
-        // A layout guide rather than a view: the strip needs no colour of its
-        // own, since the card behind it is already black — exactly what Spotify
-        // shows in the same place at rest.
+        // The chrome brings its own black backing, rounded to meet the card's top
+        // corners, rather than relying on whatever is behind it: it is laid over
+        // the artwork now, so without this the buttons would sit on the cover.
+        chromeBackdrop.wantsLayer = true
+        chromeBackdrop.layer?.backgroundColor = NSColor.black.cgColor
+        chromeBackdrop.layer?.cornerRadius = 12
+        chromeBackdrop.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        chromeBackdrop.alphaValue = 0
         chromeBackdrop.translatesAutoresizingMaskIntoConstraints = false
         plate.addSubview(chromeBackdrop)
 
@@ -590,7 +602,7 @@ final class NowPlayingView: DraggableBackgroundView {
     /// does to its miniplayer.
     func setBackgroundColorEnabled(_ enabled: Bool) {
         isBackgroundColorEnabled = enabled
-        setAccent(enabled ? lastAccent : SpotifyPalette.base)
+        setAccent(enabled ? lastAccent : SpotifyPalette.desaturated(lastAccent))
     }
 
     private func setSettingsVisible(_ visible: Bool) {

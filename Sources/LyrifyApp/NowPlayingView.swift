@@ -369,10 +369,10 @@ final class NowPlayingView: DraggableBackgroundView {
         let level = volumeBar.value
         let name: String
         switch level {
-        case ..<1: name = "speaker.slash.fill"
-        case ..<34: name = "speaker.fill"
-        case ..<67: name = "speaker.wave.1.fill"
-        default: name = "speaker.wave.2.fill"
+        case ..<1: name = "speaker.slash"
+        case ..<34: name = "speaker"
+        case ..<67: name = "speaker.wave.1"
+        default: name = "speaker.wave.2"
         }
         volumeButton.setSymbol(name)
     }
@@ -540,7 +540,7 @@ final class NowPlayingView: DraggableBackgroundView {
         plate.addSubview(chromeBackdrop)
 
         closeButton = CloseDotButton(target: self, action: #selector(closeTapped))
-        settingsButton = MiniplayerButton(style: .toggle, symbolName: "slider.horizontal.3", pointSize: 12, target: self, action: #selector(settingsTapped))
+        settingsButton = MiniplayerButton(style: .toggle, symbolName: "slider.horizontal.3", pointSize: 13, target: self, action: #selector(settingsTapped))
         settingsButton.toolTip = "Miniplayer settings"
 
         let chromePieces: [NSView] = [closeButton, dotsHorizontal, dotsVertical, settingsButton]
@@ -563,13 +563,13 @@ final class NowPlayingView: DraggableBackgroundView {
     /// Spotify's seven: volume, shuffle, previous, play-pause, next, repeat,
     /// share. The band sheds them from the outside in as it narrows.
     private func buildTransportRow(in plate: NSView) {
-        volumeButton = MiniplayerButton(style: .secondary, symbolName: "speaker.wave.2.fill", pointSize: 13, target: self, action: #selector(volumeTapped))
-        shuffleButton = MiniplayerButton(style: .toggle, symbolName: "shuffle", pointSize: 13, target: self, action: #selector(shuffleTapped))
-        previousButton = MiniplayerButton(style: .secondary, symbolName: "backward.end.fill", pointSize: 15, target: self, action: #selector(previousTapped))
+        volumeButton = MiniplayerButton(style: .secondary, symbolName: "speaker.wave.2", pointSize: 14, target: self, action: #selector(volumeTapped))
+        shuffleButton = MiniplayerButton(style: .toggle, symbolName: "shuffle", pointSize: 14, target: self, action: #selector(shuffleTapped))
+        previousButton = MiniplayerButton(style: .secondary, symbolName: "backward.end", pointSize: 17, target: self, action: #selector(previousTapped))
         playPauseButton = MiniplayerButton(style: .primary, symbolName: "play.fill", pointSize: 14, target: self, action: #selector(playPauseTapped))
-        nextButton = MiniplayerButton(style: .secondary, symbolName: "forward.end.fill", pointSize: 15, target: self, action: #selector(nextTapped))
-        repeatButton = MiniplayerButton(style: .toggle, symbolName: "repeat", pointSize: 13, target: self, action: #selector(repeatTapped))
-        shareButton = MiniplayerButton(style: .secondary, symbolName: "square.and.arrow.up", pointSize: 13, target: self, action: #selector(shareTapped))
+        nextButton = MiniplayerButton(style: .secondary, symbolName: "forward.end", pointSize: 17, target: self, action: #selector(nextTapped))
+        repeatButton = MiniplayerButton(style: .toggle, symbolName: "repeat", pointSize: 14, target: self, action: #selector(repeatTapped))
+        shareButton = MiniplayerButton(style: .secondary, symbolName: "square.and.arrow.up", pointSize: 14, target: self, action: #selector(shareTapped))
 
         volumeButton.toolTip = "Volume"
         shuffleButton.toolTip = "Shuffle"
@@ -738,7 +738,7 @@ final class NowPlayingView: DraggableBackgroundView {
     }
 
     private func buildInfoBar(in plate: NSView) {
-        lyricsButton = MiniplayerButton(style: .toggle, symbolName: "quote.bubble.fill", pointSize: 14, target: self, action: #selector(lyricsTapped))
+        lyricsButton = MiniplayerButton(style: .toggle, symbolName: "quote.bubble", pointSize: 15, target: self, action: #selector(lyricsTapped))
         lyricsButton.toolTip = "Lyrics"
 
         infoStack.orientation = .vertical

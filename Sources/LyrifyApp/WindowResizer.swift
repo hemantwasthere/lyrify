@@ -249,8 +249,8 @@ final class ResizeGripGlyph: NSView {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 14),
-            heightAnchor.constraint(equalToConstant: 14),
+            widthAnchor.constraint(equalToConstant: 10),
+            heightAnchor.constraint(equalToConstant: 10),
         ])
     }
 
@@ -264,9 +264,11 @@ final class ResizeGripGlyph: NSView {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.white.withAlphaComponent(0.35).setStroke()
         let path = NSBezierPath()
-        path.lineWidth = 1.1
+        path.lineWidth = 1
         path.lineCapStyle = .round
-        for offset in stride(from: CGFloat(3), through: 11, by: 4) {
+        // Two short strokes rather than three long ones — Spotify's is a hint in
+        // the corner, not a hatched panel.
+        for offset in stride(from: CGFloat(3), through: 7, by: 4) {
             path.move(to: NSPoint(x: bounds.maxX - offset, y: bounds.minY + 1.5))
             path.line(to: NSPoint(x: bounds.maxX - 1.5, y: bounds.minY + offset))
         }

@@ -42,9 +42,13 @@ final class NowPlayingView: DraggableBackgroundView {
     private static let widthForShuffle: CGFloat = 450
     private static let widthForShare: CGFloat = 600
 
-    /// Spotify insets its panel this far from the card edge; ours sat at 12,
-    /// which read as a noticeably fatter border at the same width.
-    private static let margin: CGFloat = 8
+    /// Spotify runs the artwork panel almost to the card edge — a hairline of
+    /// black, not a border.
+    private static let panelMargin: CGFloat = 5
+
+    /// The title and artist are inset much further than the panel is. Using one
+    /// margin for both made the panel look fat and the title cramped at once.
+    private static let textMargin: CGFloat = 18
     /// Matches the black strip Spotify leaves above its artwork at rest.
     private static let chromeHeight: CGFloat = 22
 
@@ -103,6 +107,7 @@ final class NowPlayingView: DraggableBackgroundView {
     private var portraitConstraints: [NSLayoutConstraint] = []
     private var bandConstraints: [NSLayoutConstraint] = []
     private var chromeSlide: NSLayoutConstraint!
+    private var artTop: NSLayoutConstraint!
     private var isBand = false
     private var isHovering = false
     private var lyricsAvailable = true
@@ -130,7 +135,7 @@ final class NowPlayingView: DraggableBackgroundView {
         super.init(frame: NSRect(origin: .zero, size: Self.size))
 
         wantsLayer = true
-        layer?.cornerRadius = 12
+        layer?.cornerRadius = 14
         layer?.masksToBounds = true
         layer?.backgroundColor = SpotifyPalette.base.cgColor
         layer?.borderWidth = 1
@@ -192,6 +197,11 @@ final class NowPlayingView: DraggableBackgroundView {
             // down over black was only ever invisible work.
             self.chromeSlide.animator().constant = revealed ? 0 : -6
             self.chromeBackdrop.animator().alphaValue = revealed ? 1 : 0
+            // The artwork slides down to open the strip, and back up to close it.
+            // Only this edge moves; the title and artist below never budge.
+            if !self.isBand {
+                self.artTop.animator().constant = revealed ? Self.chromeHeight : Self.panelMargin
+            }
             self.closeButton.animator().alphaValue = revealed ? 1 : 0
             self.dotsHorizontal.animator().alphaValue = revealed ? 1 : 0
             self.dotsVertical.animator().alphaValue = revealed ? 1 : 0
@@ -414,7 +424,7 @@ final class NowPlayingView: DraggableBackgroundView {
         // darkest across the top of the cover.
         gradientLayer.startPoint = CGPoint(x: 0.5, y: 1)
         gradientLayer.endPoint = CGPoint(x: 0.5, y: 0)
-        gradientLayer.cornerRadius = 8
+        gradientLayer.cornerRadius = 10
         gradientLayer.masksToBounds = true
         artPanel.layer = gradientLayer
         artPanel.wantsLayer = true
@@ -422,7 +432,7 @@ final class NowPlayingView: DraggableBackgroundView {
         plate.addSubview(artPanel)
 
         artView.wantsLayer = true
-        artView.layer?.cornerRadius = 5
+        artView.layer?.cornerRadius = 8
         artView.layer?.masksToBounds = true
         artView.imageScaling = .scaleProportionallyUpOrDown
         artView.image = OverlayArtworkPlaceholder.image(pointSize: 34)
@@ -512,8 +522,12 @@ final class NowPlayingView: DraggableBackgroundView {
         // the artwork now, so without this the buttons would sit on the cover.
         chromeBackdrop.wantsLayer = true
         chromeBackdrop.layer?.backgroundColor = NSColor.black.cgColor
-        chromeBackdrop.layer?.cornerRadius = 12
-        chromeBackdrop.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        // Rounded at the foot, square at the head where it meets the card's own
+        // corners. A hard horizontal edge ruled across the artwork was what made
+        // this read as a rectangle dropped on top rather than a bar the artwork
+        // has made room for.
+        chromeBackdrop.layer?.cornerRadius = 10
+        chromeBackdrop.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         chromeBackdrop.alphaValue = 0
         chromeBackdrop.translatesAutoresizingMaskIntoConstraints = false
         plate.addSubview(chromeBackdrop)
@@ -736,7 +750,13 @@ final class NowPlayingView: DraggableBackgroundView {
     }
 
     private func buildConstraintSets(in plate: NSView) {
-        let m = Self.margin
+        let pm = Self.panelMargin
+        let tm = Self.textMargin
+        // Rest inset. On hover this opens to `chromeHeight` so the chrome has
+        // somewhere to sit — Spotify makes the room as you point at it rather
+        // than holding it empty, and the panel's rounded top corners then tuck
+        // under the bar instead of being hidden behind it.
+        artTop = artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: pm)
 
         portraitConstraints = [
             closeButton.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: 10),
@@ -749,10 +769,10 @@ final class NowPlayingView: DraggableBackgroundView {
             // The art runs from the top edge to the title. Neither the chrome nor
             // the progress bar takes a row of its own — both are laid over this
             // panel and faded in, so revealing them moves nothing.
-            artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: m),
-            artPanel.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: m),
-            artPanel.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -m),
-            artPanel.bottomAnchor.constraint(equalTo: infoStack.topAnchor, constant: -10),
+            artTop,
+            artPanel.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: pm),
+            artPanel.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -pm),
+            artPanel.bottomAnchor.constraint(equalTo: infoStack.topAnchor, constant: -8),
 
             transportRow.centerXAnchor.constraint(equalTo: artPanel.centerXAnchor),
             transportRow.centerYAnchor.constraint(equalTo: artPanel.centerYAnchor),
@@ -763,10 +783,10 @@ final class NowPlayingView: DraggableBackgroundView {
             progressSection.trailingAnchor.constraint(equalTo: artPanel.trailingAnchor, constant: -10),
             progressSection.bottomAnchor.constraint(equalTo: artPanel.bottomAnchor, constant: -8),
 
-            infoStack.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: m),
+            infoStack.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: tm),
             infoStack.trailingAnchor.constraint(equalTo: lyricsButton.leadingAnchor, constant: -10),
-            infoStack.bottomAnchor.constraint(equalTo: plate.bottomAnchor, constant: -m),
-            lyricsButton.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -m),
+            infoStack.bottomAnchor.constraint(equalTo: plate.bottomAnchor, constant: -14),
+            lyricsButton.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -tm),
             lyricsButton.centerYAnchor.constraint(equalTo: infoStack.centerYAnchor),
         ]
 

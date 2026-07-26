@@ -132,9 +132,10 @@ final class MiniplayerButton: NSButton {
                 : (isHovering ? SpotifyPalette.textPrimary : SpotifyPalette.glyphRest)
         }
 
-        // Spotify's glyphs are noticeably lighter than AppKit's default
-        // symbol weight; anything heavier reads as chunky beside them.
-        let weight: NSFont.Weight = style == .primary ? .bold : .regular
+        // Spotify's glyphs are lighter and rounder than AppKit's defaults. Even
+        // `.regular` reads as sharp beside them, so the secondary controls drop
+        // to `.light` and the play glyph to `.semibold`.
+        let weight: NSFont.Weight = style == .primary ? .semibold : .light
         let config = NSImage.SymbolConfiguration(pointSize: symbolPointSize, weight: weight)
             .applying(.init(paletteColors: [color]))
         image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?

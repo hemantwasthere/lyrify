@@ -13,11 +13,10 @@ import AppKit
 /// macOS stops vending them, so a missing cursor costs a nicety rather than the
 /// gesture itself.
 ///
-/// Note that the cursor only actually changes while Lyrify is the frontmost
-/// application. macOS lets the active app decide what the pointer looks like,
-/// and the Overlay is a non-activating panel that deliberately never becomes key
-/// (ADR-0006) — so in the background the system keeps drawing the arrow no
-/// matter what is set here. The resize gesture itself works regardless.
+/// Setting the cursor requires the window to be able to take key status, which
+/// is why this went so long showing a plain arrow. Claiming it on entry costs no
+/// focus: the panel is non-activating, so Lyrify never comes forward and the
+/// keyboard stays where it was (ADR-0006).
 ///
 /// Deliberately untested — cursor and event handling verified by hand.
 final class WindowResizer: NSView {
@@ -125,6 +124,11 @@ final class WindowResizer: NSView {
               let raw = event.trackingArea?.userInfo?["edge"] as? String,
               let edge = Edge(rawValue: raw)
         else { return }
+        // Claiming key status is what buys the right to set the pointer: macOS
+        // hands that to the key window and ignores everyone else. It costs no
+        // focus — the panel is non-activating, so Lyrify does not come forward
+        // and the keyboard stays with whatever is actually in front (ADR-0006).
+        window?.makeKey()
         cursor(for: edge).set()
     }
 
@@ -132,6 +136,26 @@ final class WindowResizer: NSView {
         // Leaving mid-resize must not reset the pointer out from under the drag.
         guard activeEdge == nil else { return }
         NSCursor.arrow.set()
+    }
+
+    /// The native path, now that the window can take key status: AppKit consults
+    /// these itself and keeps the pointer right as it moves within a region,
+    /// which setting the cursor by hand on entry alone never managed.
+    override func resetCursorRects() {
+        let m = Self.margin
+        let w = bounds.width
+        let h = bounds.height
+        guard w > 2 * m, h > 2 * m else { return }
+
+        addCursorRect(NSRect(x: 0, y: m, width: m, height: h - 2 * m), cursor: cursor(for: .left))
+        addCursorRect(NSRect(x: w - m, y: m, width: m, height: h - 2 * m), cursor: cursor(for: .right))
+        addCursorRect(NSRect(x: m, y: 0, width: w - 2 * m, height: m), cursor: cursor(for: .bottom))
+        addCursorRect(NSRect(x: m, y: h - m, width: w - 2 * m, height: m), cursor: cursor(for: .top))
+        let corner = NSSize(width: m, height: m)
+        addCursorRect(NSRect(origin: .zero, size: corner), cursor: cursor(for: .bottomLeft))
+        addCursorRect(NSRect(origin: NSPoint(x: w - m, y: 0), size: corner), cursor: cursor(for: .bottomRight))
+        addCursorRect(NSRect(origin: NSPoint(x: 0, y: h - m), size: corner), cursor: cursor(for: .topLeft))
+        addCursorRect(NSRect(origin: NSPoint(x: w - m, y: h - m), size: corner), cursor: cursor(for: .topRight))
     }
 
     private func cursor(for edge: Edge?) -> NSCursor {
@@ -262,7 +286,7 @@ final class ResizeGripGlyph: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.white.withAlphaComponent(0.35).setStroke()
+        NSColor.white.withAlphaComponent(0.28).setStroke()
         let path = NSBezierPath()
         path.lineWidth = 1
         path.lineCapStyle = .round

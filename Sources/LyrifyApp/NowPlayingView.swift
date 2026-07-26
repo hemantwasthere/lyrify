@@ -49,8 +49,9 @@ final class NowPlayingView: DraggableBackgroundView {
     /// The title and artist are inset much further than the panel is. Using one
     /// margin for both made the panel look fat and the title cramped at once.
     private static let textMargin: CGFloat = 18
-    /// Matches the black strip Spotify leaves above its artwork at rest.
-    private static let chromeHeight: CGFloat = 22
+    /// The black strip Spotify leaves above its artwork, which the chrome
+    /// bar's controls fade into.
+    private static let chromeHeight: CGFloat = 28
 
     var onTogglePlayPause: (() -> Void)?
     var onSkipToNext: (() -> Void)?
@@ -422,7 +423,7 @@ final class NowPlayingView: DraggableBackgroundView {
         // darkest across the top of the cover.
         gradientLayer.startPoint = CGPoint(x: 0.5, y: 1)
         gradientLayer.endPoint = CGPoint(x: 0.5, y: 0)
-        gradientLayer.cornerRadius = 10
+        gradientLayer.cornerRadius = 13
         gradientLayer.masksToBounds = true
         artPanel.layer = gradientLayer
         artPanel.wantsLayer = true
@@ -520,12 +521,9 @@ final class NowPlayingView: DraggableBackgroundView {
         // the artwork now, so without this the buttons would sit on the cover.
         chromeBackdrop.wantsLayer = true
         chromeBackdrop.layer?.backgroundColor = NSColor.black.cgColor
-        // Rounded at the foot, square at the head where it meets the card's own
-        // corners. A hard horizontal edge ruled across the artwork was what made
-        // this read as a rectangle dropped on top rather than a bar the artwork
-        // has made room for.
-        chromeBackdrop.layer?.cornerRadius = 10
-        chromeBackdrop.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        // Square: the curve at the join comes from the artwork panel's own top
+        // corners, which sit just below this.
+        chromeBackdrop.layer?.cornerRadius = 0
         chromeBackdrop.alphaValue = 0
         chromeBackdrop.translatesAutoresizingMaskIntoConstraints = false
         plate.addSubview(chromeBackdrop)
@@ -750,13 +748,12 @@ final class NowPlayingView: DraggableBackgroundView {
     private func buildConstraintSets(in plate: NSView) {
         let pm = Self.panelMargin
         let tm = Self.textMargin
-        // Fixed, and it stays fixed on hover. Diffing Spotify's own miniplayer
-        // row by row between the two states shows the artwork never moves: only
-        // the chrome bar appears over its top edge and the scrim deepens beneath.
-        // Sliding this edge down to open a gap was a misreading of the bar's
-        // lower edge, and it dragged the cover's size with it every time the
-        // pointer arrived.
-        artTop = artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: pm)
+        // Below the chrome strip, not behind it — and fixed, so hovering still
+        // moves nothing. Tucking the panel under the bar hid the very corners
+        // that make the join look curved: the bar's own lower edge is straight
+        // across, and with the panel's rounded corners buried behind it that
+        // straight edge was all there was to see.
+        artTop = artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: Self.chromeHeight)
 
         portraitConstraints = [
             closeButton.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: 10),

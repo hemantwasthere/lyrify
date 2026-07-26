@@ -90,8 +90,8 @@ final class DragDotsView: NSView {
         case vertical
     }
 
-    private static let dotSize: CGFloat = 2.5
-    private static let spacing: CGFloat = 4
+    private static let dotSize: CGFloat = 3
+    private static let spacing: CGFloat = 4.5
 
     private let columns: Int
     private let rows: Int
@@ -120,7 +120,7 @@ final class DragDotsView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
-        SpotifyPalette.textSubdued.setFill()
+        SpotifyPalette.textSubdued.withAlphaComponent(0.85).setFill()
         for row in 0..<rows {
             for column in 0..<columns {
                 let origin = NSPoint(

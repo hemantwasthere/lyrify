@@ -28,12 +28,6 @@ final class OverlayWindow: NSPanel {
         // and so never gets to change the cursor — cursor rects are no help
         // here, being consulted only for the key window, which this never is.
         acceptsMouseMovedEvents = true
-        // AppKit's own cursor management would undo every cursor the resize
-        // border sets, restoring the arrow a moment later. Since this window has
-        // no cursor rects to manage — it never becomes key, so they are never
-        // consulted — switching the machinery off costs nothing and lets a
-        // manually set cursor stay put.
-        disableCursorRects()
 
         self.contentView = contentView
     }
@@ -100,6 +94,11 @@ final class OverlayWindow: NSPanel {
             : [.borderless, .nonactivatingPanel]
     }
 
-    override var canBecomeKey: Bool { false }
+    /// macOS lets only the window that can take key status decide what the
+    /// pointer looks like over it, which is why the resize border could never
+    /// change the cursor. Allowing key status costs nothing here: paired with
+    /// `.nonactivatingPanel`, clicking this window does not activate Lyrify, so
+    /// whatever the listener was typing into keeps the keyboard (ADR-0006).
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }

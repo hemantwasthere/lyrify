@@ -47,6 +47,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+// Tooltips appear after roughly two seconds by default, which is far too long
+// for controls the listener is already pointing at. AppKit exposes no API for
+// this, only the defaults key its tooltip manager reads at startup — hence
+// registering it here, before any window exists to read it.
+UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 350])
+
 let application = NSApplication.shared
 let delegate = AppDelegate()
 application.delegate = delegate

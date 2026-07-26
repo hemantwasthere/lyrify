@@ -34,6 +34,15 @@ final class LyricsCardView: NSView {
     init() {
         super.init(frame: .zero)
 
+        // Whatever the lyrics need, they never get a vote on how big the card
+        // is. Without this the two feed each other without limit: a taller card
+        // makes `LyricsViewScale` ask for more lines, those lines demand more
+        // height, the card grows to supply it, and around again — which is how
+        // a 300×400 card ended up over a thousand points on a side. Lines that
+        // don't fit are clipped instead.
+        wantsLayer = true
+        layer?.masksToBounds = true
+
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 4
@@ -48,12 +57,22 @@ final class LyricsCardView: NSView {
             label.maximumNumberOfLines = 1
             label.isHidden = true
             label.translatesAutoresizingMaskIntoConstraints = false
+            // Part of the same rule: a long or numerous set of lines must be
+            // free to be clipped rather than push the card wider or taller.
+            for axis in [NSLayoutConstraint.Orientation.horizontal, .vertical] {
+                label.setContentCompressionResistancePriority(.defaultLow, for: axis)
+                label.setContentHuggingPriority(.defaultLow, for: axis)
+            }
+            labels.append(label)
+            // Added to the hierarchy *before* the width constraint below is
+            // activated: that constraint spans the label and this view, and
+            // activating it while the label still has no superview throws —
+            // the two have no common ancestor to resolve it against.
+            stack.addArrangedSubview(label)
             // Relative to this view's own width, not a fixed constant: the
             // card is resizable now, so a hardcoded cap would stay stale as
             // it grows wider, letting truncation kick in far too early.
             label.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -32).isActive = true
-            labels.append(label)
-            stack.addArrangedSubview(label)
         }
 
         NSLayoutConstraint.activate([

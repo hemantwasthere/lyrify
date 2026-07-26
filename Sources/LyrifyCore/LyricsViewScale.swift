@@ -15,24 +15,37 @@ public enum LyricsViewScale {
         }
     }
 
-    /// The smallest card height this mapping expects — the Expanded card's
-    /// own minimum size — and what it answers at or below that height.
-    public static let minimumHeight: CGFloat = 96
+    /// The smallest height this mapping expects, and what it answers at or
+    /// below it.
+    ///
+    /// This is the height of the *lyrics area* — the panel the lines are drawn
+    /// in — not the whole card. Feeding it the card's height was what made the
+    /// text far too large for the space it actually had: the panel is only ever
+    /// a fraction of the card, so every line came out sized for a box roughly
+    /// twice as tall as the one it had to fit inside.
+    public static let minimumHeight: CGFloat = 64
     public static let minimumLineCount = 2
-    public static let minimumFontSize: CGFloat = 15
+    public static let minimumFontSize: CGFloat = 11
 
-    /// However tall the card grows, line count and font size stop growing
-    /// here — a card too crowded with lines stops being legible at a
+    /// However tall the panel grows, line count and font size stop growing
+    /// here — a panel too crowded with lines stops being legible at a
     /// glance, which is the whole point of the Overlay.
     public static let maximumLineCount = 9
-    public static let maximumFontSize: CGFloat = 32
+    public static let maximumFontSize: CGFloat = 20
 
-    /// One additional line for every this many points of extra height.
-    private static let pointsPerLine: CGFloat = 40
+    /// Below this much height, even the two base lines cannot be drawn at a
+    /// readable size. The Overlay hides its lyrics button entirely rather than
+    /// offering a view that would arrive unreadable.
+    public static let minimumUsableHeight: CGFloat = 58
+
+    /// One additional line for every this many points of extra height. Set so
+    /// `lineCount` lines at `fontSize` always fit the height that asked for
+    /// them, with room for the spacing between them.
+    private static let pointsPerLine: CGFloat = 46
 
     /// Degrees of font growth per additional line — kept in step with
     /// line count so the two always change together.
-    private static let fontSizeStepPerLine: CGFloat = 1.5
+    private static let fontSizeStepPerLine: CGFloat = 1.0
 
     public static func resolve(forHeight height: CGFloat) -> Scale {
         let extraHeight = max(0, height - minimumHeight)

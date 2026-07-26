@@ -57,6 +57,16 @@ final class SpotifyBridge: PlaybackSource {
     private static let volumeSource = #"tell application "Spotify" to return (sound volume as text)"#
     private lazy var volumeScript = NSAppleScript(source: Self.volumeSource)
 
+    /// Shuffle and repeat, read together in one round trip: the miniplayer
+    /// shows both states at once, so asking for them separately would double
+    /// the Apple Events for no gain.
+    private static let toggleStateSource = """
+        tell application "Spotify"
+            return ((shuffling as text) & (ASCII character 31) & (repeating as text))
+        end tell
+        """
+    private lazy var toggleStateScript = NSAppleScript(source: Self.toggleStateSource)
+
     private static let playSource = #"tell application "Spotify" to play"#
     private lazy var playScript = NSAppleScript(source: Self.playSource)
 
@@ -154,6 +164,33 @@ final class SpotifyBridge: PlaybackSource {
     func setVolume(to percent: Int) throws {
         guard isSpotifyRunning else { return }
         let script = NSAppleScript(source: #"tell application "Spotify" to set sound volume to \#(percent)"#)
+        _ = try run(script)
+    }
+
+    /// Whether shuffle and repeat are currently on. Read when the card expands
+    /// and after either is toggled, so the two buttons light up to match
+    /// Spotify's real state rather than a guess Lyrify keeps locally.
+    func currentToggleState() throws -> (isShuffling: Bool, isRepeating: Bool) {
+        guard isSpotifyRunning else { throw BridgeError.scriptFailed("Spotify is not running") }
+        guard let output = try run(toggleStateScript)?.stringValue else {
+            throw BridgeError.scriptFailed("Spotify returned no shuffle/repeat state")
+        }
+        let parts = output.components(separatedBy: "\u{1F}")
+        guard parts.count == 2 else {
+            throw BridgeError.scriptFailed("Malformed shuffle/repeat state")
+        }
+        return (parts[0] == "true", parts[1] == "true")
+    }
+
+    func setShuffling(_ isOn: Bool) throws {
+        guard isSpotifyRunning else { return }
+        let script = NSAppleScript(source: #"tell application "Spotify" to set shuffling to \#(isOn)"#)
+        _ = try run(script)
+    }
+
+    func setRepeating(_ isOn: Bool) throws {
+        guard isSpotifyRunning else { return }
+        let script = NSAppleScript(source: #"tell application "Spotify" to set repeating to \#(isOn)"#)
         _ = try run(script)
     }
 

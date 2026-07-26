@@ -25,6 +25,7 @@ final class OverlayController {
     private let visibilityPreference: OverlayVisibilityPreference
     private let expansionPreference: OverlayExpansionPreference
     private let sizePreference: OverlaySizePreference
+    private let backgroundColorPreference = OverlayBackgroundColorPreference()
 
     private var rotation = DiscRotation()
 
@@ -47,6 +48,13 @@ final class OverlayController {
     /// own toggle to agree.
     private var isPlaying = false
 
+    /// Spotify's shuffle and repeat state, mirrored so the two toggle buttons
+    /// can light up. Read from Spotify rather than tracked locally — the
+    /// listener may flip either in Spotify itself, and a local guess would
+    /// drift out of step the moment they did.
+    private var isShuffling = false
+    private var isRepeating = false
+
     /// The Track URI the current Anchor's artwork lookup and seek-range
     /// configuration belong to. Mirrors `MenuBarController`'s lyrics-lookup
     /// rule: a slow answer for an abandoned Track must never overwrite
@@ -63,11 +71,6 @@ final class OverlayController {
     /// a familiar first-launch spot, not a meaningful design commitment.
     private static let defaultTopInset: CGFloat = 8
     private static let defaultTrailingInset: CGFloat = 24
-
-    /// However large the listener drags the card, resizing stops here —
-    /// generous enough for `LyricsViewScale`'s own maximum line count to
-    /// comfortably fit.
-    private static let maximumCardSize = NSSize(width: 480, height: 640)
 
     // nonisolated(unsafe) so deinit may remove it; safe because it's written
     // once in init and never mutated again. Same rationale as
@@ -105,13 +108,28 @@ final class OverlayController {
         let initialOrigin = positionPreference.origin ?? Self.defaultOrigin(for: initialSize)
 
         self.window = OverlayWindow(contentView: initialView)
-        window.setFrame(NSRect(origin: initialOrigin, size: initialSize), display: true)
+        // Clamped for the same reason every content swap is: a position
+        // remembered from a shorter card would otherwise put this one's top
+        // edge off the screen, invisible and unreachable.
+        let initialFrame = OverlayWindow.clampedToScreen(NSRect(origin: initialOrigin, size: initialSize))
+        window.setFrame(initialFrame, display: true)
         if startsExpanded {
             enableCardResizing()
+            primeExpandedState()
         }
 
         discView.onClick = { [weak self] in self?.expand() }
-        nowPlayingView.onClick = { [weak self] in self?.collapse() }
+        // The card deliberately has no `onClick`: clicking it used to collapse
+        // back to the Disc, which fought with resizing it. The chrome bar's red
+        // dot is now the only way back.
+        nowPlayingView.onClose = { [weak self] in self?.collapse() }
+        nowPlayingView.onShare = { [weak self] in self?.copyTrackLink() }
+        nowPlayingView.onBackgroundColorChanged = { [weak self] isOn in
+            guard let self else { return }
+            self.backgroundColorPreference.isEnabled = isOn
+            self.nowPlayingView.setBackgroundColorEnabled(isOn)
+        }
+        nowPlayingView.onResized = { [weak self] in self?.sizeChanged() }
         nowPlayingView.onTogglePlayPause = { [weak self] in
             guard let self else { return }
             try? (self.isPlaying ? self.bridge.pause() : self.bridge.play())
@@ -121,6 +139,16 @@ final class OverlayController {
         nowPlayingView.onSeek = { [weak self] position in try? self?.bridge.seek(to: position) }
         nowPlayingView.onVolumeChange = { [weak self] percent in try? self?.bridge.setVolume(to: percent) }
         nowPlayingView.onToggleLyrics = { [weak self] in self?.toggleLyrics() }
+        nowPlayingView.onToggleShuffle = { [weak self] in
+            guard let self else { return }
+            try? self.bridge.setShuffling(!self.isShuffling)
+            self.reconcileToggleState()
+        }
+        nowPlayingView.onToggleRepeat = { [weak self] in
+            guard let self else { return }
+            try? self.bridge.setRepeating(!self.isRepeating)
+            self.reconcileToggleState()
+        }
 
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
@@ -187,13 +215,39 @@ final class OverlayController {
         guard expansionPreference.isExpanded == false else { return }
         expansionPreference.isExpanded = true
         isShowingLyrics = false
-        nowPlayingView.showArtwork()
-        window.setContent(nowPlayingView, size: sizePreference.size ?? NowPlayingView.size)
+        nowPlayingView.resetToArtwork()
+        window.setContent(nowPlayingView, size: sizePreference.size ?? NowPlayingView.size, animated: true)
         enableCardResizing()
 
+        primeExpandedState()
+    }
+
+    /// Reads the state the card can't infer from an Anchor — Spotify's actual
+    /// volume, shuffle, and repeat — so the controls start out matching reality
+    /// rather than a default. Needed on a fresh expand *and* at launch, since an
+    /// Overlay restored in its Expanded state never passes through `expand()`
+    /// and would otherwise show an empty volume slider until it was collapsed
+    /// and reopened.
+    private func primeExpandedState() {
+        nowPlayingView.update(backgroundColorEnabled: backgroundColorPreference.isEnabled)
+        nowPlayingView.setBackgroundColorEnabled(backgroundColorPreference.isEnabled)
         Task { [weak self] in
             guard let self, let volume = try? self.bridge.currentVolume() else { return }
             self.nowPlayingView.updateVolume(volume)
+        }
+        reconcileToggleState()
+    }
+
+    /// Re-reads shuffle and repeat from Spotify and repaints the two buttons.
+    /// Called when the card expands and after either is toggled, rather than on
+    /// every Anchor — neither changes often enough to be worth an Apple Event
+    /// per frame.
+    private func reconcileToggleState() {
+        Task { [weak self] in
+            guard let self, let state = try? self.bridge.currentToggleState() else { return }
+            self.isShuffling = state.isShuffling
+            self.isRepeating = state.isRepeating
+            self.nowPlayingView.update(isShuffling: state.isShuffling, isRepeating: state.isRepeating)
         }
     }
 
@@ -201,16 +255,34 @@ final class OverlayController {
         guard expansionPreference.isExpanded else { return }
         expansionPreference.isExpanded = false
         window.setResizable(false)
-        window.setContent(discView)
+        window.setContent(discView, animated: true)
     }
 
     /// Sets the card's resize bounds before turning resizing on — in that
     /// order, so there's no moment the listener could grab an edge before
     /// bounds exist to enforce.
+    /// The card is resized by `WindowResizer`, which sets the window's frame
+    /// itself, so the `.resizable` style mask is not needed — and is actively
+    /// harmful. Turning it on makes AppKit re-derive the window's size from the
+    /// content view's constraints on its next layout pass, which collapsed the
+    /// card to the width of its widest required row and then ignored every
+    /// attempt to widen it again. Leaving the mask alone keeps the frame ours.
     private func enableCardResizing() {
-        window.minSize = NowPlayingView.size
-        window.maxSize = Self.maximumCardSize
-        window.setResizable(true)
+        window.minSize = NowPlayingView.minimumSize
+        window.maxSize = NowPlayingView.maximumSize
+    }
+
+    /// Puts a link to the current Track on the pasteboard — the miniplayer's
+    /// share button. Spotify's own URI is not a link anyone can open in a
+    /// browser, so it is rewritten into the `open.spotify.com` form first.
+    private func copyTrackLink() {
+        guard let uri = currentTrackURI else { return }
+        let identifier = uri.replacingOccurrences(of: "spotify:track:", with: "")
+        guard identifier != uri else { return }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString("https://open.spotify.com/track/\(identifier)", forType: .string)
     }
 
     private func toggleLyrics() {
@@ -315,6 +387,7 @@ final class OverlayController {
                 currentLyrics = nil
                 discView.updatePlaceholder()
                 nowPlayingView.updatePlaceholder()
+                nowPlayingView.clearTrackInfo()
             }
             return
         }
@@ -324,6 +397,7 @@ final class OverlayController {
 
         discView.updatePlaceholder()
         nowPlayingView.updatePlaceholder()
+        nowPlayingView.updateTrackInfo(name: track.name, artist: track.artist)
         nowPlayingView.configureSeek(duration: track.duration)
 
         reconcileArtwork(for: track)
@@ -371,7 +445,10 @@ final class OverlayController {
             // beyond the single Active/Next pair `OverlayDisplay` itself
             // answers.
             guard let position = state.position, let lyrics = currentLyrics else { return }
-            let scale = LyricsViewScale.resolve(forHeight: window.frame.size.height)
+            // The panel the lines are drawn in, not the whole card: scaling to
+            // the card sized every line for a box roughly twice as tall as the
+            // one it actually had, which is what made the lyrics overflow.
+            let scale = LyricsViewScale.resolve(forHeight: nowPlayingView.lyricsAreaHeight)
             let entries = LyricsWindow.resolve(at: position, in: lyrics, lineCount: scale.lineCount)
             nowPlayingView.updateLyrics(.lines(entries, fontSize: scale.fontSize))
         }

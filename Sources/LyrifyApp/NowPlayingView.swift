@@ -565,9 +565,9 @@ final class NowPlayingView: DraggableBackgroundView {
     private func buildTransportRow(in plate: NSView) {
         volumeButton = MiniplayerButton(style: .secondary, symbolName: "speaker.wave.2", pointSize: 14, target: self, action: #selector(volumeTapped))
         shuffleButton = MiniplayerButton(style: .toggle, symbolName: "shuffle", pointSize: 14, target: self, action: #selector(shuffleTapped))
-        previousButton = MiniplayerButton(style: .secondary, symbolName: "backward.end", pointSize: 17, target: self, action: #selector(previousTapped))
-        playPauseButton = MiniplayerButton(style: .primary, symbolName: "play.fill", pointSize: 14, target: self, action: #selector(playPauseTapped))
-        nextButton = MiniplayerButton(style: .secondary, symbolName: "forward.end", pointSize: 17, target: self, action: #selector(nextTapped))
+        previousButton = MiniplayerButton(style: .secondary, symbolName: "backward.end.fill", pointSize: 15, target: self, action: #selector(previousTapped))
+        playPauseButton = MiniplayerButton(style: .primary, symbolName: "play.fill", pointSize: 13, target: self, action: #selector(playPauseTapped))
+        nextButton = MiniplayerButton(style: .secondary, symbolName: "forward.end.fill", pointSize: 15, target: self, action: #selector(nextTapped))
         repeatButton = MiniplayerButton(style: .toggle, symbolName: "repeat", pointSize: 14, target: self, action: #selector(repeatTapped))
         shareButton = MiniplayerButton(style: .secondary, symbolName: "square.and.arrow.up", pointSize: 14, target: self, action: #selector(shareTapped))
 
@@ -738,7 +738,7 @@ final class NowPlayingView: DraggableBackgroundView {
     }
 
     private func buildInfoBar(in plate: NSView) {
-        lyricsButton = MiniplayerButton(style: .toggle, symbolName: "quote.bubble", pointSize: 15, target: self, action: #selector(lyricsTapped))
+        lyricsButton = MiniplayerButton(style: .toggle, symbolName: "quote.bubble.fill", pointSize: 14, target: self, action: #selector(lyricsTapped))
         lyricsButton.toolTip = "Lyrics"
 
         infoStack.orientation = .vertical

@@ -7,9 +7,15 @@ import AppKit
 ///
 /// Deliberately untested — a table of constants with no decision of its own.
 enum SpotifyPalette {
-    /// The card's background. Spotify's miniplayer is flat and near-black —
-    /// it does not tint itself from the album art.
-    static let base = NSColor(srgbRed: 0.05, green: 0.05, blue: 0.05, alpha: 1)
+    /// The card's background: black, not near-black.
+    ///
+    /// The difference matters more than it looks. Spotify's card measures 0.00
+    /// against the 0.06 this used to be, and that 0.06 was enough to make the
+    /// strip above the artwork read as a distinct grey band — space visibly held
+    /// open for the chrome. At true black the same strip reads as nothing at all,
+    /// which is why Spotify's looks like it reserves no space despite reserving
+    /// almost exactly as much.
+    static let base = NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
 
     static let textPrimary = NSColor.white
     static let textSubdued = NSColor(srgbRed: 0.70, green: 0.70, blue: 0.70, alpha: 1)

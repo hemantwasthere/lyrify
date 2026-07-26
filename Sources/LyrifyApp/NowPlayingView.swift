@@ -405,8 +405,12 @@ final class NowPlayingView: DraggableBackgroundView {
         // which runs before nested subviews have their final bounds — so it
         // stays zero-sized and never draws.
         gradientLayer.colors = [SpotifyPalette.fallbackAccent.cgColor, SpotifyPalette.base.cgColor]
-        gradientLayer.startPoint = CGPoint(x: 0.5, y: 0)
-        gradientLayer.endPoint = CGPoint(x: 0.5, y: 1)
+        // A layer's y axis runs upward, so (0.5, 1) is the *top*. Starting at 0
+        // put the first colour at the bottom and rendered both of these gradients
+        // upside down — the tint pooling at the bottom and the scrim at its
+        // darkest across the top of the cover.
+        gradientLayer.startPoint = CGPoint(x: 0.5, y: 1)
+        gradientLayer.endPoint = CGPoint(x: 0.5, y: 0)
         gradientLayer.cornerRadius = 8
         gradientLayer.masksToBounds = true
         artPanel.layer = gradientLayer
@@ -443,14 +447,15 @@ final class NowPlayingView: DraggableBackgroundView {
         // clear at the top, which is what stops the fade reading as a hard band
         // across the middle of the cover.
         scrimLayer.colors = [
-            NSColor.black.withAlphaComponent(0.38).cgColor,
-            NSColor.black.withAlphaComponent(0.51).cgColor,
-            NSColor.black.withAlphaComponent(0.66).cgColor,
-            NSColor.black.withAlphaComponent(0.86).cgColor,
+            NSColor.black.withAlphaComponent(0.40).cgColor,
+            NSColor.black.withAlphaComponent(0.45).cgColor,
+            NSColor.black.withAlphaComponent(0.58).cgColor,
+            NSColor.black.withAlphaComponent(0.73).cgColor,
+            NSColor.black.withAlphaComponent(0.88).cgColor,
         ]
-        scrimLayer.locations = [0, 0.3, 0.5, 1]
-        scrimLayer.startPoint = CGPoint(x: 0.5, y: 0)
-        scrimLayer.endPoint = CGPoint(x: 0.5, y: 1)
+        scrimLayer.locations = [0, 0.1, 0.4, 0.7, 1]
+        scrimLayer.startPoint = CGPoint(x: 0.5, y: 1)
+        scrimLayer.endPoint = CGPoint(x: 0.5, y: 0)
         scrim.layer = scrimLayer
         scrim.wantsLayer = true
         scrim.alphaValue = 0
@@ -729,17 +734,22 @@ final class NowPlayingView: DraggableBackgroundView {
             settingsButton.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -10),
             settingsButton.centerYAnchor.constraint(equalTo: chromeBackdrop.centerYAnchor),
 
-            artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: Self.chromeHeight),
+            // The art runs from the top edge to the title. Neither the chrome nor
+            // the progress bar takes a row of its own — both are laid over this
+            // panel and faded in, so revealing them moves nothing.
+            artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: m),
             artPanel.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: m),
             artPanel.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -m),
-            artPanel.bottomAnchor.constraint(equalTo: progressSection.topAnchor, constant: -8),
+            artPanel.bottomAnchor.constraint(equalTo: infoStack.topAnchor, constant: -10),
 
             transportRow.centerXAnchor.constraint(equalTo: artPanel.centerXAnchor),
             transportRow.centerYAnchor.constraint(equalTo: artPanel.centerYAnchor),
 
-            progressSection.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: m),
-            progressSection.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -m),
-            progressSection.bottomAnchor.constraint(equalTo: infoStack.topAnchor, constant: -8),
+            // Sat on the deepest part of the scrim, which is exactly what that
+            // dark bottom edge is for.
+            progressSection.leadingAnchor.constraint(equalTo: artPanel.leadingAnchor, constant: 10),
+            progressSection.trailingAnchor.constraint(equalTo: artPanel.trailingAnchor, constant: -10),
+            progressSection.bottomAnchor.constraint(equalTo: artPanel.bottomAnchor, constant: -8),
 
             infoStack.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: m),
             infoStack.trailingAnchor.constraint(equalTo: lyricsButton.leadingAnchor, constant: -10),

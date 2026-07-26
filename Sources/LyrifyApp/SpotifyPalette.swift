@@ -42,16 +42,19 @@ enum SpotifyPalette {
         return NSColor(hue: hue, saturation: 0, brightness: brightness, alpha: 1)
     }
 
-    /// The dominant colour of `image`, saturated and darkened into something
-    /// safe to put white text on. Spotify's miniplayer tints the panel behind
-    /// the cover this way, but never so brightly that the title stops reading.
+    /// The colour Spotify tints the panel behind the cover with: the artwork's
+    /// dominant colour, softened enough to put white text on.
     ///
-    /// Averages the whole image down to a single pixel rather than clustering:
-    /// the gradient only needs a plausible tint, and a 1×1 downsample is both
-    /// instant and stable frame to frame.
+    /// Averaging the whole image to a single pixel — the obvious approach, and
+    /// the one this used to take — is the wrong measure. Averaging mixes every
+    /// colour in the cover into one muddy brown-grey, which is why a vivid red
+    /// sleeve came out the same dull shade as a photograph. What is wanted is the
+    /// colour that *dominates*, so the pixels are binned by hue and the busiest
+    /// bin wins, with saturated bins weighted up so a small band of strong colour
+    /// beats a large expanse of near-grey.
     static func accent(from image: NSImage) -> NSColor {
-        guard let average = averageColor(of: image),
-              let srgb = average.usingColorSpace(.sRGB)
+        guard let dominant = dominant(of: image),
+              let srgb = dominant.usingColorSpace(.sRGB)
         else { return fallbackAccent }
 
         var hue: CGFloat = 0
@@ -60,45 +63,89 @@ enum SpotifyPalette {
         var alpha: CGFloat = 0
         srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
 
-        // Measured against Spotify's own panel: a dark green cover gives it a
-        // near-neutral grey (R=G=B=0.28), a bright outdoor one a pale lavender.
-        // So the tint is the artwork heavily *desaturated* and left roughly at
-        // its own brightness — not pushed toward a saturated colour, which is
-        // what made this card read as muddy brown where Spotify's reads as a
-        // soft wash.
+        // Calibrated by sampling both panels side by side with playback paused,
+        // so the same cover is under each: Spotify lands near saturation 0.45 and
+        // brightness 0.75. Binning finds the hue but returns it darker and a
+        // little flatter than Spotify draws it, since the winning bin's mean
+        // pulls in its duller members, so both are lifted to meet it.
         return NSColor(
             hue: hue,
-            saturation: min(saturation, 0.18),
-            brightness: min(max(brightness * 1.1, 0.24), 0.68),
+            saturation: min(saturation * 1.15, 0.62),
+            brightness: min(max(brightness * 1.25, 0.32), 0.75),
             alpha: 1
         )
     }
 
-    private static func averageColor(of image: NSImage) -> NSColor? {
+    /// Bins the artwork's pixels and returns the mean colour of the heaviest bin.
+    private static func dominant(of image: NSImage) -> NSColor? {
+        guard let small = downsample(image, to: 40) else { return nil }
+
+        struct Bin {
+            var count = 0.0
+            var r = 0.0, g = 0.0, b = 0.0
+        }
+        var bins: [Int: Bin] = [:]
+
+        for y in 0..<small.pixelsHigh {
+            for x in 0..<small.pixelsWide {
+                guard let c = small.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+                c.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+
+                // Near-black and blown-out pixels say nothing about the artwork's
+                // colour; letting them vote is what pulls the result toward grey.
+                guard brightness > 0.12, brightness < 0.96 else { continue }
+
+                // Hue matters most, so it gets the finest bins; a coarse
+                // brightness split keeps a dark and a light red apart.
+                let key = Int(hue * 24) * 10
+                    + Int(min(saturation, 0.999) * 3) * 3
+                    + Int(min(brightness, 0.999) * 3)
+
+                // A strongly coloured pixel counts for more than a washed-out one.
+                let weight = 0.35 + saturation
+                var bin = bins[key] ?? Bin()
+                bin.count += weight
+                bin.r += c.redComponent * weight
+                bin.g += c.greenComponent * weight
+                bin.b += c.blueComponent * weight
+                bins[key] = bin
+            }
+        }
+
+        guard let best = bins.values.max(by: { $0.count < $1.count }), best.count > 0 else { return nil }
+        return NSColor(
+            srgbRed: best.r / best.count,
+            green: best.g / best.count,
+            blue: best.b / best.count,
+            alpha: 1
+        )
+    }
+
+    /// Redraws `image` small, so the binning above reads a few hundred pixels
+    /// rather than a few hundred thousand.
+    private static func downsample(_ image: NSImage, to side: Int) -> NSBitmapImageRep? {
         guard let tiff = image.tiffRepresentation,
               let source = NSBitmapImageRep(data: tiff),
-              let onePixel = NSBitmapImageRep(
+              let target = NSBitmapImageRep(
                   bitmapDataPlanes: nil,
-                  pixelsWide: 1,
-                  pixelsHigh: 1,
+                  pixelsWide: side,
+                  pixelsHigh: side,
                   bitsPerSample: 8,
                   samplesPerPixel: 4,
                   hasAlpha: true,
                   isPlanar: false,
                   colorSpaceName: .deviceRGB,
-                  bytesPerRow: 4,
+                  bytesPerRow: side * 4,
                   bitsPerPixel: 32
               )
         else { return nil }
 
-        // Drawing the whole image into a single pixel lets the graphics system
-        // do the averaging.
         NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: onePixel)
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: target)
         NSGraphicsContext.current?.imageInterpolation = .high
-        source.draw(in: NSRect(x: 0, y: 0, width: 1, height: 1))
+        source.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
         NSGraphicsContext.restoreGraphicsState()
-
-        return onePixel.colorAt(x: 0, y: 0)
+        return target
     }
 }

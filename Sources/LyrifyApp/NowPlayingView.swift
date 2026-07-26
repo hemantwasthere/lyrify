@@ -197,11 +197,6 @@ final class NowPlayingView: DraggableBackgroundView {
             // down over black was only ever invisible work.
             self.chromeSlide.animator().constant = revealed ? 0 : -6
             self.chromeBackdrop.animator().alphaValue = revealed ? 1 : 0
-            // The artwork slides down to open the strip, and back up to close it.
-            // Only this edge moves; the title and artist below never budge.
-            if !self.isBand {
-                self.artTop.animator().constant = revealed ? Self.chromeHeight : Self.panelMargin
-            }
             self.closeButton.animator().alphaValue = revealed ? 1 : 0
             self.dotsHorizontal.animator().alphaValue = revealed ? 1 : 0
             self.dotsVertical.animator().alphaValue = revealed ? 1 : 0
@@ -255,10 +250,13 @@ final class NowPlayingView: DraggableBackgroundView {
         animation.duration = 0.45
         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         gradientLayer.add(animation, forKey: "colors")
+        // Nearly flat, not a fade to black. Spotify's panel measures 0.424 at
+        // the top and 0.379 at the foot — a wash of one colour, barely graded.
+        // Running it down into the card's black was what left the tint reading
+        // so much darker than Spotify's even once the hue was right.
         gradientLayer.colors = [
             color.cgColor,
-            color.blended(withFraction: 0.55, of: SpotifyPalette.base)?.cgColor ?? color.cgColor,
-            SpotifyPalette.base.cgColor,
+            color.blended(withFraction: 0.18, of: SpotifyPalette.base)?.cgColor ?? color.cgColor,
         ]
     }
 
@@ -752,10 +750,12 @@ final class NowPlayingView: DraggableBackgroundView {
     private func buildConstraintSets(in plate: NSView) {
         let pm = Self.panelMargin
         let tm = Self.textMargin
-        // Rest inset. On hover this opens to `chromeHeight` so the chrome has
-        // somewhere to sit — Spotify makes the room as you point at it rather
-        // than holding it empty, and the panel's rounded top corners then tuck
-        // under the bar instead of being hidden behind it.
+        // Fixed, and it stays fixed on hover. Diffing Spotify's own miniplayer
+        // row by row between the two states shows the artwork never moves: only
+        // the chrome bar appears over its top edge and the scrim deepens beneath.
+        // Sliding this edge down to open a gap was a misreading of the bar's
+        // lower edge, and it dragged the cover's size with it every time the
+        // pointer arrived.
         artTop = artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: pm)
 
         portraitConstraints = [

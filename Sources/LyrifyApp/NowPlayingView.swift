@@ -71,10 +71,9 @@ final class NowPlayingView: DraggableBackgroundView {
     /// far too large for its box.
     var lyricsAreaHeight: CGFloat { artPanel.bounds.height }
 
-    private let gradientLayer = CAGradientLayer()
+    private let artPanel = ArtworkPanelView()
     private let scrimLayer = CAGradientLayer()
     private let chromeBackdrop = NSView()
-    private let artPanel = NSView()
     private let artView = PassthroughImageView()
     private let lyricsView = LyricsCardView()
     private let scrim = NSView()
@@ -153,6 +152,7 @@ final class NowPlayingView: DraggableBackgroundView {
 
     override func layout() {
         super.layout()
+        refreshPanelMask(animated: false)
         // Only when something actually changed — writing constraints on every
         // pass would invalidate layout and call this again without end.
         applyLayoutMode(band: bounds.height < Self.bandHeightThreshold, force: false)
@@ -186,9 +186,19 @@ final class NowPlayingView: DraggableBackgroundView {
         refreshRevealedControls(animated: true)
     }
 
+    /// Reshapes the artwork's clip so its visible top edge meets the foot of the
+    /// chrome bar, rounded, while the bar is showing — and runs back up to the
+    /// panel's own top when it goes. The panel's frame never changes, so the
+    /// cover neither moves nor resizes; only what is drawn of it does.
+    private func refreshPanelMask(animated: Bool) {
+        artPanel.topCut = (isHovering && !isBand) ? Self.chromeHeight - Self.panelMargin : 0
+        artPanel.reshape(animated: animated)
+    }
+
     /// Portrait hides the transport behind the art until pointed at; the band
     /// keeps its controls on show, having nothing to hide them behind.
     private func refreshRevealedControls(animated: Bool) {
+        refreshPanelMask(animated: animated)
         let revealed = isHovering
         let apply = {
             // The strip the chrome lives in is always there — it is just the
@@ -250,12 +260,12 @@ final class NowPlayingView: DraggableBackgroundView {
         let animation = CABasicAnimation(keyPath: "colors")
         animation.duration = 0.45
         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        gradientLayer.add(animation, forKey: "colors")
+        artPanel.gradient.add(animation, forKey: "colors")
         // Nearly flat, not a fade to black. Spotify's panel measures 0.424 at
         // the top and 0.379 at the foot — a wash of one colour, barely graded.
         // Running it down into the card's black was what left the tint reading
         // so much darker than Spotify's even once the hue was right.
-        gradientLayer.colors = [
+        artPanel.gradient.colors = [
             color.cgColor,
             color.blended(withFraction: 0.18, of: SpotifyPalette.base)?.cgColor ?? color.cgColor,
         ]
@@ -416,17 +426,13 @@ final class NowPlayingView: DraggableBackgroundView {
         // sublayer instead means sizing it by hand from a parent's `layout()`,
         // which runs before nested subviews have their final bounds — so it
         // stays zero-sized and never draws.
-        gradientLayer.colors = [SpotifyPalette.fallbackAccent.cgColor, SpotifyPalette.base.cgColor]
+        artPanel.gradient.colors = [SpotifyPalette.fallbackAccent.cgColor, SpotifyPalette.base.cgColor]
         // A layer's y axis runs upward, so (0.5, 1) is the *top*. Starting at 0
         // put the first colour at the bottom and rendered both of these gradients
         // upside down — the tint pooling at the bottom and the scrim at its
         // darkest across the top of the cover.
-        gradientLayer.startPoint = CGPoint(x: 0.5, y: 1)
-        gradientLayer.endPoint = CGPoint(x: 0.5, y: 0)
-        gradientLayer.cornerRadius = 13
-        gradientLayer.masksToBounds = true
-        artPanel.layer = gradientLayer
-        artPanel.wantsLayer = true
+        artPanel.gradient.startPoint = CGPoint(x: 0.5, y: 1)
+        artPanel.gradient.endPoint = CGPoint(x: 0.5, y: 0)
         artPanel.translatesAutoresizingMaskIntoConstraints = false
         plate.addSubview(artPanel)
 
@@ -753,11 +759,10 @@ final class NowPlayingView: DraggableBackgroundView {
     private func buildConstraintSets(in plate: NSView) {
         let pm = Self.panelMargin
         let tm = Self.textMargin
-        // Below the bar, and fixed there. The curve at the join is this panel's
-        // own top corners rounding away from the bar, and they can only be seen
-        // if the panel starts where the bar ends — behind it they are covered,
-        // which is what left a straight rule across the cover.
-        artTop = artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: Self.chromeHeight)
+        // The same inset as the left and right edges, always. Nothing is held
+        // open above the artwork; the curve under the bar comes from clipping,
+        // not from moving this edge down. See `refreshPanelMask`.
+        artTop = artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: pm)
 
         portraitConstraints = [
             closeButton.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: 10),
@@ -956,5 +961,74 @@ private final class ControlPlate: NSView {
             view = current.superview
         }
         return nil
+    }
+}
+
+
+/// The tinted panel the cover sits on, which clips itself.
+///
+/// The clip is what lets the artwork keep the same inset at the top that it has
+/// at the sides while still showing a curve under the chrome bar: rather than
+/// moving the panel down to make room — which would resize the cover every time
+/// the pointer arrived — the panel stays put and simply stops being drawn where
+/// the bar covers it, rounding off at that edge instead.
+///
+/// It reshapes in its *own* `layout()`, not its parent's. A parent lays out
+/// before its children have their final bounds, so a mask built up there is
+/// sized from stale numbers — and on the first pass from zero, which masks the
+/// panel away entirely.
+///
+/// Deliberately untested — a drawing leaf, verified by hand.
+final class ArtworkPanelView: NSView {
+    let gradient = CAGradientLayer()
+
+    /// How much of the panel's top is currently covered by the chrome bar.
+    var topCut: CGFloat = 0
+
+    private let clip = CAShapeLayer()
+    private var currentPath: CGPath?
+    private static let cornerRadius: CGFloat = 13
+
+    init() {
+        super.init(frame: .zero)
+        gradient.mask = clip
+        layer = gradient
+        wantsLayer = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        reshape(animated: false)
+    }
+
+    func reshape(animated: Bool) {
+        guard bounds.width > 0, bounds.height > topCut else { return }
+
+        // Layer coordinates put y at the bottom, so trimming the top means
+        // shortening the rectangle rather than offsetting it.
+        let rect = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - topCut)
+        let path = CGPath(
+            roundedRect: rect,
+            cornerWidth: Self.cornerRadius,
+            cornerHeight: Self.cornerRadius,
+            transform: nil
+        )
+        guard path != currentPath else { return }
+
+        if animated, let currentPath {
+            let slide = CABasicAnimation(keyPath: "path")
+            slide.fromValue = currentPath
+            slide.toValue = path
+            slide.duration = 0.2
+            slide.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            clip.add(slide, forKey: "path")
+        }
+        clip.path = path
+        currentPath = path
     }
 }

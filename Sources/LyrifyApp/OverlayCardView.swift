@@ -175,16 +175,50 @@ final class OverlayCardView: DraggableBackgroundView {
     /// actually sits, not just the slider's bare width.
     private static let fullTransportRowSpacing: CGFloat = 20
 
-    /// The shared rendering for every control glyph — transport row, chrome
-    /// bar, mute, play/pause, lyrics (ADR-0015). A lighter weight and a
-    /// controlled point size, applied through `styleTransportButton` and
-    /// the few methods that reassign a glyph afterward (`updateMuteIcon`,
-    /// `updatePlayPauseIcon`), so the icons read smooth and evenly sized
-    /// rather than at AppKit's heavier default — the "sharp" look the live
-    /// Spotify comparison flagged. A first-pass weight to tune against
-    /// Spotify, not a locked value.
-    private static let controlSymbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-        .applying(.init(scale: .medium))
+    /// How a control glyph is drawn. Spotify's miniplayer mixes the two
+    /// rather than picking one: solid skip arrows and play/pause against
+    /// outlined volume, shuffle, repeat and share.
+    ///
+    /// The split exists because weight only really bites on an outline
+    /// glyph, where it goes into the stroke; on a filled one it is nearly
+    /// inert, which is why tuning the weight against Spotify did almost
+    /// nothing while every glyph was still `.fill`. Spotify's outlines are
+    /// drawn with a substantial stroke — around 1.5pt at this size — so
+    /// `.medium` is what matches them.
+    private enum ControlGlyph {
+        /// Filled, and heavier to hold its own against the outlines beside
+        /// it. Play/pause keeps its fill regardless: it sits on a light
+        /// disc, where an outline would vanish.
+        case solid
+        /// Outlined, where the stroke carries the weight.
+        case outline
+
+        var weight: NSFont.Weight {
+            switch self {
+            case .solid: .bold
+            case .outline: .medium
+            }
+        }
+    }
+
+    /// The default glyph point size — the size every control was drawn at
+    /// before the transport row's own glyphs were sized individually
+    /// against Spotify's, and still what the chrome bar's own icons use.
+    private static let controlGlyphPointSize: CGFloat = 14
+
+    /// The rendering for every control glyph — transport row, chrome bar,
+    /// mute, play/pause, lyrics (ADR-0015). Applied through
+    /// `styleTransportButton` and the few methods that reassign a glyph
+    /// afterward (`updateMuteIcon`, `updatePlayPauseIcon`), so the icons
+    /// read smooth and evenly sized rather than at AppKit's heavier
+    /// default — the "sharp" look the live Spotify comparison flagged.
+    private static func controlSymbolConfiguration(
+        _ glyph: ControlGlyph = .outline,
+        pointSize: CGFloat = controlGlyphPointSize
+    ) -> NSImage.SymbolConfiguration {
+        NSImage.SymbolConfiguration(pointSize: pointSize, weight: glyph.weight)
+            .applying(.init(scale: .medium))
+    }
 
     var onTogglePlayPause: (() -> Void)?
     var onSkipToNext: (() -> Void)?
@@ -927,7 +961,9 @@ final class OverlayCardView: DraggableBackgroundView {
 
     func update(isPlaying: Bool) {
         let symbolName = isPlaying ? "pause.fill" : "play.fill"
-        let image = controlImage(symbolName, accessibilityDescription: "Play/Pause")
+        // Must match how `playPause` was first styled, or the glyph would
+        // jump a size and a weight the moment playback is toggled.
+        let image = controlImage(symbolName, glyph: .solid, pointSize: 13, accessibilityDescription: "Play/Pause")
         playPauseButton.image = image
         fullPlayPauseButton.image = image
     }
@@ -1014,8 +1050,16 @@ final class OverlayCardView: DraggableBackgroundView {
     /// unmuted are visually distinct symbols, not a tint change, so the
     /// state reads at a glance without needing to also check the slider.
     private func updateMuteIcon() {
-        let symbolName = isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"
-        let image = controlImage(symbolName, accessibilityDescription: isMuted ? "Unmute" : "Mute")
+        // The outline variants, matching the rest of the outlined controls
+        // — the `.fill` pair these replace read as much heavier than the
+        // shuffle and repeat glyphs sitting right beside them.
+        let symbolName = isMuted ? "speaker.slash" : "speaker.wave.2"
+        let image = controlImage(
+            symbolName,
+            glyph: .outline,
+            pointSize: 15,
+            accessibilityDescription: isMuted ? "Unmute" : "Mute"
+        )
         fullMuteButton.image = image
         compactMuteButton.image = image
     }
@@ -1102,7 +1146,7 @@ final class OverlayCardView: DraggableBackgroundView {
         // `fullLyricsButton`) so it renders above `lyricsFace`/
         // `settingsFace` and stays reachable while either is showing.
         lyricsButton.image = NSImage(systemSymbolName: "quote.bubble", accessibilityDescription: "Lyrics")
-        styleTransportButton(lyricsButton)
+        styleTransportButton(lyricsButton, glyph: .outline, pointSize: 15)
         lyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
         lyricsButton.target = self
         lyricsButton.action = #selector(lyricsTapped)
@@ -1277,7 +1321,7 @@ final class OverlayCardView: DraggableBackgroundView {
         fullTextStack.translatesAutoresizingMaskIntoConstraints = false
 
         fullLyricsButton.image = NSImage(systemSymbolName: "quote.bubble", accessibilityDescription: "Lyrics")
-        styleTransportButton(fullLyricsButton)
+        styleTransportButton(fullLyricsButton, glyph: .outline, pointSize: 15)
         fullLyricsButton.contentTintColor = .white.withAlphaComponent(0.7)
         fullLyricsButton.target = self
         fullLyricsButton.action = #selector(lyricsTapped)
@@ -1562,25 +1606,32 @@ final class OverlayCardView: DraggableBackgroundView {
             slider.widthAnchor.constraint(equalToConstant: Self.fullVolumeSliderWidth),
         ])
 
+        // Sized individually rather than all at one point size: Spotify
+        // draws the skip arrows noticeably larger than the outlined
+        // controls flanking them, and the play glyph smaller again, since
+        // it has its own disc to fill out its footprint.
         shuffleButton.image = NSImage(systemSymbolName: "shuffle", accessibilityDescription: nil)
-        styleTransportButton(shuffleButton)
+        styleTransportButton(shuffleButton, glyph: .outline, pointSize: 15)
         shuffleButton.target = self
         shuffleButton.action = #selector(shuffleTapped)
 
-        previousButton.image = NSImage(systemSymbolName: "backward.fill", accessibilityDescription: nil)
-        styleTransportButton(previousButton)
+        // `backward.end`/`forward.end`, not `backward`/`forward`: these skip
+        // to the ends of the track list, which is what the buttons actually
+        // do, and they are the glyphs Spotify uses for it.
+        previousButton.image = NSImage(systemSymbolName: "backward.end.fill", accessibilityDescription: nil)
+        styleTransportButton(previousButton, glyph: .solid, pointSize: 16)
         previousButton.target = self
         previousButton.action = #selector(previousTapped)
 
         playPause.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: "Play/Pause")
-        styleTransportButton(playPause)
+        styleTransportButton(playPause, glyph: .solid, pointSize: 13)
         playPause.target = self
         playPause.action = #selector(playPauseTapped)
 
-        let nextButton = transportButton(symbolName: "forward.fill", action: #selector(nextTapped))
+        let nextButton = transportButton(symbolName: "forward.end.fill", glyph: .solid, pointSize: 16, action: #selector(nextTapped))
 
         repeatButton.image = NSImage(systemSymbolName: "repeat", accessibilityDescription: nil)
-        styleTransportButton(repeatButton)
+        styleTransportButton(repeatButton, glyph: .outline, pointSize: 15)
         repeatButton.target = self
         repeatButton.action = #selector(repeatTapped)
 
@@ -1588,7 +1639,7 @@ final class OverlayCardView: DraggableBackgroundView {
         // `SpotifyShareLink`'s clipboard copy rather than opening a share
         // sheet, per the ticket's own decision.
         shareButton.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: nil)
-        styleTransportButton(shareButton)
+        styleTransportButton(shareButton, glyph: .outline, pointSize: 15)
         shareButton.target = self
         shareButton.action = #selector(shareTapped)
 
@@ -1710,8 +1761,11 @@ final class OverlayCardView: DraggableBackgroundView {
         dragHandle.contentTintColor = .white.withAlphaComponent(0.4)
         dragHandle.translatesAutoresizingMaskIntoConstraints = false
 
-        settings.image = NSImage(systemSymbolName: "gearshape.fill", accessibilityDescription: "Settings")
-        styleTransportButton(settings)
+        // Sliders rather than a gear: this opens the miniplayer's own
+        // display options, not app preferences, and it is the affordance
+        // Spotify shows in the same corner.
+        settings.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Settings")
+        styleTransportButton(settings, glyph: .outline)
         settings.contentTintColor = .white.withAlphaComponent(0.7)
         settings.target = self
         settings.action = #selector(settingsTapped)
@@ -1926,13 +1980,22 @@ final class OverlayCardView: DraggableBackgroundView {
         NSLayoutConstraint.activate(compactTransportRowStackedConstraints)
     }
 
-    private func transportButton(symbolName: String, action: Selector) -> NSButton {
+    private func transportButton(
+        symbolName: String,
+        glyph: ControlGlyph = .outline,
+        pointSize: CGFloat = OverlayCardView.controlGlyphPointSize,
+        action: Selector
+    ) -> NSButton {
         let button = NSButton(image: NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) ?? NSImage(), target: self, action: action)
-        styleTransportButton(button)
+        styleTransportButton(button, glyph: glyph, pointSize: pointSize)
         return button
     }
 
-    private func styleTransportButton(_ button: NSButton) {
+    private func styleTransportButton(
+        _ button: NSButton,
+        glyph: ControlGlyph = .outline,
+        pointSize: CGFloat = OverlayCardView.controlGlyphPointSize
+    ) {
         button.isBordered = false
         button.bezelStyle = .regularSquare
         button.contentTintColor = .white
@@ -1942,7 +2005,8 @@ final class OverlayCardView: DraggableBackgroundView {
         // (`update(isPlaying:)`, `updateMuteIcon`, the chrome drag handle)
         // build it through `controlImage(_:accessibilityDescription:)`
         // instead, so the same configuration is never forgotten.
-        button.image = button.image?.withSymbolConfiguration(Self.controlSymbolConfiguration)
+        button.image = button.image?
+            .withSymbolConfiguration(Self.controlSymbolConfiguration(glyph, pointSize: pointSize))
     }
 
     /// A control glyph built through the shared `SymbolConfiguration`
@@ -1950,9 +2014,14 @@ final class OverlayCardView: DraggableBackgroundView {
     /// freshly-created image, so a glyph reassigned outside
     /// `styleTransportButton` can't silently render at AppKit's heavy
     /// default by forgetting the call.
-    private func controlImage(_ systemSymbolName: String, accessibilityDescription: String? = nil) -> NSImage? {
+    private func controlImage(
+        _ systemSymbolName: String,
+        glyph: ControlGlyph = .outline,
+        pointSize: CGFloat = OverlayCardView.controlGlyphPointSize,
+        accessibilityDescription: String? = nil
+    ) -> NSImage? {
         NSImage(systemSymbolName: systemSymbolName, accessibilityDescription: accessibilityDescription)?
-            .withSymbolConfiguration(Self.controlSymbolConfiguration)
+            .withSymbolConfiguration(Self.controlSymbolConfiguration(glyph, pointSize: pointSize))
     }
 
     private func styleSlider(_ slider: NSSlider, min: Double, max: Double) {

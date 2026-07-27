@@ -112,26 +112,30 @@ struct CoreImageArtworkColorWashTests {
         #expect(resolvedSize?.height == 12)
     }
 
-    @Test("a solid-color source resolves to that same color, not a desaturated or shifted one")
-    func solidColorSourceResolvesToItsOwnColor() async {
+    @Test("a solid-color source keeps its own hue, softened rather than reproduced exactly")
+    func solidColorSourceKeepsItsHue() async {
         let artwork = makeSolidPNGData(red: 0.8, green: 0.2, blue: 0.2)
         let wash = CoreImageArtworkColorWash()
 
-        // Compares against the source's own decoded pixel — not a
-        // hand-computed 0.8/0.2/0.2-derived literal — since PNG encode/decode
-        // alone (independent of any wash processing) already shifts raw
-        // component values via color management.
-        guard let sourceColor = pixels(of: artwork)?.first,
-              let resolved = await wash.blur(artwork),
-              let washColor = pixels(of: resolved)?.first
-        else {
+        guard let resolved = await wash.blur(artwork), let washColor = pixels(of: resolved)?.first else {
             Issue.record("expected resolved color-wash data")
             return
         }
 
-        #expect(abs(Int(washColor[0]) - Int(sourceColor[0])) <= 2)
-        #expect(abs(Int(washColor[1]) - Int(sourceColor[1])) <= 2)
-        #expect(abs(Int(washColor[2]) - Int(sourceColor[2])) <= 2)
+        // The hue survives: still unmistakably red, with the other two
+        // channels well below it.
+        #expect(washColor[0] > washColor[1])
+        #expect(washColor[0] > washColor[2])
+
+        // But not reproduced verbatim. The wash deliberately lifts what it
+        // finds toward what Spotify actually draws — capped at saturation
+        // 0.62 and brightness 0.75 — because a raw dominant color is both
+        // darker and flatter than Spotify's panel, and because white title
+        // text has to stay legible on it. A source this saturated must come
+        // back visibly softer, so the green/blue floor rises off the 0.2 it
+        // went in at.
+        #expect(washColor[1] > 20)
+        #expect(washColor[2] > 20)
     }
 
     @Test("a visually busy, high-contrast source resolves to one coherent wash, not a blotchy multi-color smear")
@@ -152,9 +156,20 @@ struct CoreImageArtworkColorWashTests {
         }
     }
 
-    @Test("a busy source's wash color sits strictly between its quadrants' extremes, not an arbitrary sampled pixel")
-    func busySourceResolvesToItsTrueAverage() async {
-        let artwork = makeBusyPNGData(size: 8)
+    @Test("a mostly-grey source with one vivid band takes the band's color, not the muddy average")
+    func vividMinorityBeatsGreyMajority() async {
+        // Three quarters near-grey, one quarter vivid red — the case the
+        // averaging this replaced got visibly wrong (ADR-0016). An average
+        // here is dragged to a brownish grey by the majority; the dominant
+        // color is the red, because the grey pixels are near-colorless and
+        // weighted down accordingly.
+        let size = 8
+        let artwork = makePNGData(size: size) { context in
+            context.setFillColor(CGColor(red: 0.45, green: 0.45, blue: 0.46, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: size, height: size))
+            context.setFillColor(CGColor(red: 0.85, green: 0.1, blue: 0.1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: size, height: size / 4))
+        }
         let wash = CoreImageArtworkColorWash()
 
         guard let resolved = await wash.blur(artwork), let washColor = pixels(of: resolved)?.first else {
@@ -162,24 +177,26 @@ struct CoreImageArtworkColorWashTests {
             return
         }
 
-        // Every quadrant color here (red/green/blue/yellow) is pure 0s and
-        // 1s per channel, and every channel has both a 0-quadrant and a
-        // 1-quadrant among them. Comparing against one hand-computed
-        // "expected average" pixel isn't reliable — CoreImage's own
-        // color-managed averaging doesn't numerically match a same-value
-        // solid swatch pushed through a *different* encode path (CGContext
-        // vs. CIContext each apply their own color management, verified
-        // empirically to diverge). But *any* true multi-pixel average of
-        // these quadrants must land strictly inside (0, 255) on every
-        // channel, however CoreImage's internal color management encodes
-        // it — a monotonic transform still sends a strictly-interior value
-        // to a strictly-interior value. A wash that constant-filled from
-        // one arbitrary sampled pixel would instead land on an exact 0 or
-        // 255 in at least one channel, since every quadrant is pure at the
-        // channel level.
-        #expect(washColor[0] > 0 && washColor[0] < 255)
-        #expect(washColor[1] > 0 && washColor[1] < 255)
-        #expect(washColor[2] > 0 && washColor[2] < 255)
+        // The threshold has to sit above what plain averaging reaches, or
+        // this passes under the very implementation it exists to rule out.
+        // Measured on this fixture: averaging lands at a red/green margin
+        // of about 48 (a brownish grey — the muddiness complained of),
+        // dominance at about 109. 80 separates them with room either side.
+        #expect(Int(washColor[0]) - Int(washColor[1]) > 80)
+        #expect(Int(washColor[0]) - Int(washColor[2]) > 80)
+    }
+
+    @Test("a wholly black source still resolves, falling back rather than dropping the wash")
+    func blackSourceFallsBackToAverage() async {
+        // Every pixel is below the near-black floor the binning ignores, so
+        // no bin qualifies. Real artwork is sometimes exactly this, and
+        // losing the backdrop entirely would be worse than a dark wash.
+        let artwork = makeSolidPNGData(red: 0, green: 0, blue: 0)
+        let wash = CoreImageArtworkColorWash()
+
+        let resolved = await wash.blur(artwork)
+
+        #expect(resolved != nil)
     }
 
     @Test("unrecognizable data fails rather than producing garbage")

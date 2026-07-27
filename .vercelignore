@@ -12,3 +12,7 @@ Resources
 Package.swift
 skills-lock.json
 *.md
+
+# Build products — Vercel installs and builds the site itself.
+site/node_modules
+site/.next

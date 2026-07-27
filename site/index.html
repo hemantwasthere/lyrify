@@ -69,8 +69,8 @@
       "applicationSubCategory": "Music",
       "operatingSystem": "macOS 14 Sonoma or later",
       "processorRequirements": "Apple Silicon or Intel",
-      "softwareVersion": "0.2.0",
-      "downloadUrl": "https://github.com/hemantwasthere/lyrify/releases/latest",
+      "softwareVersion": "0.3.0",
+      "downloadUrl": "https://github.com/hemantwasthere/lyrify/releases/download/v0.3.0/Lyrify-0.3.0-macOS.zip",
       "softwareHelp": "https://github.com/hemantwasthere/lyrify",
       "screenshot": "https://lyrify.hemant.lol/og-image.png",
       "image": "https://lyrify.hemant.lol/og-image.png",
@@ -288,6 +288,16 @@
     color: var(--text-dim);
   }
 
+  .cta-note code {
+    font-family: inherit;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 5px;
+    white-space: nowrap;
+  }
+
   /* ---------- Player mockup ---------- */
 
   .player-mock {
@@ -449,6 +459,7 @@
 
   .label-badge h2 { font-size: clamp(1.5rem, 3vw, 2rem); max-width: 20ch; }
   .label-badge .cta-note { max-width: 40ch; }
+  .label-badge .install-note { max-width: 58ch; line-height: 1.9; }
 
   /* ---------- Footer ---------- */
 
@@ -519,8 +530,8 @@
       <h1>Lyrics that keep up<br>with <em>the music.</em></h1>
       <p>Lyrify floats a small, time-synced lyrics overlay over whatever you're doing — it follows the song line by line, and follows you across every desktop and every fullscreen window.</p>
       <div class="cta-row">
-        <a class="btn-primary" href="https://github.com/hemantwasthere/lyrify/releases/latest">Download for macOS</a>
-        <span class="cta-note">Free during early access</span>
+        <a class="btn-primary" href="https://github.com/hemantwasthere/lyrify/releases/download/v0.3.0/Lyrify-0.3.0-macOS.zip">Download for macOS</a>
+        <span class="cta-note">v0.3.0 · Free during early access</span>
       </div>
     </div>
 
@@ -611,8 +622,9 @@
       <div class="label-ring" aria-hidden="true"></div>
       <h2>Download Lyrify</h2>
       <p class="cta-note">macOS 14 Sonoma or later · Apple Silicon &amp; Intel · requires Spotify installed</p>
-      <a class="btn-primary" href="https://github.com/hemantwasthere/lyrify/releases/latest">Download for macOS</a>
-      <span class="cta-note">Free during early access</span>
+      <a class="btn-primary" href="https://github.com/hemantwasthere/lyrify/releases/download/v0.3.0/Lyrify-0.3.0-macOS.zip">Download for macOS</a>
+      <span class="cta-note">v0.3.0 · Free during early access</span>
+      <p class="cta-note install-note">Signed ad-hoc, so the first launch needs one command: move Lyrify to Applications, then run <code>xattr -cr /Applications/Lyrify.app</code> in Terminal.<br><a href="https://github.com/hemantwasthere/lyrify/releases/latest">Release notes</a></p>
     </div>
   </section>
 

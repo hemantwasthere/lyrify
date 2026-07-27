@@ -286,9 +286,9 @@ final class ResizeGripGlyph: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.white.withAlphaComponent(0.28).setStroke()
+        NSColor.white.withAlphaComponent(0.45).setStroke()
         let path = NSBezierPath()
-        path.lineWidth = 1
+        path.lineWidth = 1.4
         path.lineCapStyle = .round
         // Two short strokes rather than three long ones — Spotify's is a hint in
         // the corner, not a hatched panel.

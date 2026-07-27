@@ -133,11 +133,11 @@ final class MiniplayerButton: NSButton {
         }
 
         // Weight only really bites on the outline glyphs, where it goes into the
-        // stroke; on a filled one it is nearly inert. Spotify mixes the two —
-        // solid skip arrows against outlined volume, shuffle, repeat and share —
-        // so the light weight here is what thins the outlines, and the solid
-        // glyphs are kept small enough not to overpower them.
-        let weight: NSFont.Weight = style == .primary ? .regular : .ultraLight
+        // stroke; on a filled one it is nearly inert. Spotify's outlines are
+        // drawn with a substantial stroke — around 1.5pt at this size — so
+        // `.medium` is what matches them. `.ultraLight` put them near a hairline,
+        // which read as spindly rather than subtle.
+        let weight: NSFont.Weight = style == .primary ? .bold : .medium
         let config = NSImage.SymbolConfiguration(pointSize: symbolPointSize, weight: weight)
             .applying(.init(paletteColors: [color]))
         image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?

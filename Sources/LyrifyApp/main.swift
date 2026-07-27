@@ -18,41 +18,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let anchorSource = PlaybackAnchorSource(bridge: bridge)
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
         let artworkProvider = ArtworkProvider(transport: URLSessionLyricsTransport())
-        let blurredArtworkProvider = BlurredArtworkProvider(blurring: CoreImageArtworkColorWash())
         let overlayVisibility = OverlayVisibilityPreference()
         let overlayPosition = OverlayPositionPreference()
+        let overlayExpansion = OverlayExpansionPreference()
         let overlaySize = OverlaySizePreference()
-        let blurredBackground = BlurredBackgroundPreference()
 
         let overlay = OverlayController(
             anchorSource: anchorSource,
             bridge: bridge,
             artworkProvider: artworkProvider,
-            blurredArtworkProvider: blurredArtworkProvider,
             lyricsProvider: lyricsProvider,
             visibilityPreference: overlayVisibility,
             positionPreference: overlayPosition,
-            sizePreference: overlaySize,
-            blurredBackgroundPreference: blurredBackground
+            expansionPreference: overlayExpansion,
+            sizePreference: overlaySize
         )
         self.overlay = overlay
 
-        let menuBar = MenuBarController(
+        menuBar = MenuBarController(
             anchorSource: anchorSource,
             lyricsProvider: lyricsProvider,
             overlayVisibility: overlayVisibility,
             onVisibilityChange: { overlay.refreshVisibility() }
         )
-        self.menuBar = menuBar
-
-        overlay.onVisibilityChangedByCloseButton = { [weak menuBar] in
-            menuBar?.refreshOverlayVisibilityMenuState()
-        }
 
         // Registered before anchoring starts, so it doesn't miss the seed poll.
         anchorSource.start()
     }
 }
+
+// Tooltips appear after roughly two seconds by default, which is far too long
+// for controls the listener is already pointing at. AppKit exposes no API for
+// this, only the defaults key its tooltip manager reads at startup — hence
+// registering it here, before any window exists to read it.
+UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 350])
 
 let application = NSApplication.shared
 let delegate = AppDelegate()

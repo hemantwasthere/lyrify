@@ -1,12 +1,12 @@
 import AppKit
 import LyrifyCore
 
-/// Owns the Overlay's window and its one `OverlayCardView` — keeping it
-/// where the listener left it and however large they last resized it to,
-/// spinning the Disc's artwork in time with playback, turning the controls
-/// into real Spotify commands (ADR-0007), and rendering the Lyrics face
-/// from the same `OverlayDisplay`/`LineSelection`/`LyricsWindow` seams the
-/// retired Overlay used.
+/// Owns the Overlay's window and all three of its forms — the Minimized
+/// Disc, and the Expanded card's Now Playing and Lyrics views — keeping it
+/// where the listener left it, spinning the Disc's artwork in time with
+/// playback, turning the Now Playing card's controls into real Spotify
+/// commands (ADR-0007), and rendering the Lyrics view from the same
+/// `OverlayDisplay`/`LineSelection` seams the retired Overlay used.
 ///
 /// Deliberately untested — thin AppKit wiring verified by hand; the
 /// rotation angle, artwork outcome, and lyrics content it draws come from
@@ -15,25 +15,19 @@ import LyrifyCore
 @MainActor
 final class OverlayController {
     private let window: OverlayWindow
-    private let overlayView: OverlayCardView
+    private let discView: DiscView
+    private let nowPlayingView: NowPlayingView
     private let anchorSource: PlaybackAnchorSource
     private let bridge: SpotifyBridge
     private let artworkProvider: ArtworkProvider
-    private let blurredArtworkProvider: BlurredArtworkProvider
     private let lyricsProvider: LyricsProvider
     private let positionPreference: OverlayPositionPreference
-    private let sizePreference: OverlaySizePreference
     private let visibilityPreference: OverlayVisibilityPreference
-    private let blurredBackgroundPreference: BlurredBackgroundPreference
+    private let expansionPreference: OverlayExpansionPreference
+    private let sizePreference: OverlaySizePreference
+    private let backgroundColorPreference = OverlayBackgroundColorPreference()
 
     private var rotation = DiscRotation()
-
-    /// Fired after the Overlay's own close button flips
-    /// `OverlayVisibilityPreference` — so whatever else displays that same
-    /// preference (the status item's "Show Overlay" checkbox) can re-sync
-    /// itself, since this hide path doesn't go through that checkbox's own
-    /// toggle.
-    var onVisibilityChangedByCloseButton: (() -> Void)?
 
     /// The current Track's Synced Lyrics once found; nil while looking up,
     /// on a confirmed miss, or when unavailable — every one of those is "no
@@ -41,8 +35,10 @@ final class OverlayController {
     /// them.
     private var currentLyrics: [LyricLine]?
 
-    /// Whether the widget is currently showing the Lyrics face rather than
-    /// Now Playing. Not persisted — every launch starts on Now Playing.
+    /// Whether the Expanded card is currently showing the Lyrics view
+    /// rather than Now Playing. Resets to Now Playing every time the card
+    /// expands — unlike position and expanded/collapsed state, this isn't
+    /// persisted.
     private var isShowingLyrics = false
 
     /// The last-known Anchor's play state — the play/pause button consults
@@ -52,45 +48,22 @@ final class OverlayController {
     /// own toggle to agree.
     private var isPlaying = false
 
+    /// Spotify's shuffle and repeat state, mirrored so the two toggle buttons
+    /// can light up. Read from Spotify rather than tracked locally — the
+    /// listener may flip either in Spotify itself, and a local guess would
+    /// drift out of step the moment they did.
+    private var isShuffling = false
+    private var isRepeating = false
+
     /// The Track URI the current Anchor's artwork lookup and seek-range
     /// configuration belong to. Mirrors `MenuBarController`'s lyrics-lookup
     /// rule: a slow answer for an abandoned Track must never overwrite
     /// what's on screen for the current one.
     private var currentTrackURI: String?
 
-    /// The current Track's plain artwork, once fetched — Full Layout's
-    /// background falls back to this whenever the blurred treatment isn't
-    /// ready yet, or the listener has turned it off.
-    private var currentArtworkImage: NSImage?
-
-    /// The current Track's blurred/color-boosted background, once
-    /// computed — nil until `reconcileBlurredBackground` finishes, or if it
-    /// never does (unavailable, or no real artwork to blur).
-    private var currentBlurredBackgroundImage: NSImage?
-
-    /// The `OverlayLayout` last resolved for the Overlay's current size —
-    /// kept alongside `overlayView.update(layout:)` so `refreshLyricsDisplay`
-    /// knows how many lines to ask `LyricsWindow` for without
-    /// `OverlayCardView` exposing its own private `lyricsFace`, and so
-    /// `sizeChanged()` can hand the next resolution its own previously-
-    /// visible Compact-Layout controls (`OverlayLayout.resolve`'s own
-    /// hysteresis needs that history).
-    private var currentLayout: OverlayLayout = .compact(OverlayLayout.CompactControl.allVisible)
-
-    /// How many lines `refreshLyricsDisplay` asks `LyricsWindow` to
-    /// resolve — Full Layout's own resolved `LyricsScale`, or Compact
-    /// Layout's fixed default, mirroring exactly what `lyricsFace` itself
-    /// is currently showing courtesy of `OverlayCardView.update(layout:)`.
-    private var currentLyricsLineCount: Int {
-        switch currentLayout {
-        case .compact: return LyricsCardView.defaultLineCount
-        case .full(let scale): return scale.lineCount
-        }
-    }
-
-    /// Redraws the spinning Disc and the seek slider between Anchors.
-    /// Armed only while playing; a pause cancels it, freezing both exactly
-    /// where they stopped.
+    /// Redraws the spinning Disc and, while Expanded, the seek slider,
+    /// between Anchors. Armed only while playing; a pause cancels it,
+    /// freezing both exactly where they stopped.
     private var spinTimer: Timer?
     private static let spinFrameInterval: TimeInterval = 1.0 / 30.0
 
@@ -98,22 +71,6 @@ final class OverlayController {
     /// a familiar first-launch spot, not a meaningful design commitment.
     private static let defaultTopInset: CGFloat = 8
     private static let defaultTrailingInset: CGFloat = 24
-
-    /// The smallest proven-usable Compact Layout — also the smallest the
-    /// listener can resize the Overlay down to.
-    private static let minimumSize = OverlayCardView.defaultSize
-
-    /// However large the listener drags the Overlay, resizing stops
-    /// here. Wide enough (ADR-0015) that Compact Layout can reach
-    /// Spotify's small Mini Player proportions — a wide, short horizontal
-    /// bar — rather than being trapped narrower than the thing it's meant
-    /// to replicate. This width no longer drags `thresholdHeight` up with
-    /// it the way an earlier draft's own comment warned: Full Layout's
-    /// artwork square is now capped to its own fixed maximum width
-    /// (`OverlayCardView.fullArtworkMaxWidth`) and centered within any
-    /// wider Overlay, so its structural minimum — and so the threshold —
-    /// is independent of this ceiling.
-    private static let maximumSize = NSSize(width: 600, height: 550)
 
     // nonisolated(unsafe) so deinit may remove it; safe because it's written
     // once in init and never mutated again. Same rationale as
@@ -125,73 +82,73 @@ final class OverlayController {
         anchorSource: PlaybackAnchorSource,
         bridge: SpotifyBridge,
         artworkProvider: ArtworkProvider,
-        blurredArtworkProvider: BlurredArtworkProvider,
         lyricsProvider: LyricsProvider,
         visibilityPreference: OverlayVisibilityPreference,
         positionPreference: OverlayPositionPreference,
-        sizePreference: OverlaySizePreference,
-        blurredBackgroundPreference: BlurredBackgroundPreference
+        expansionPreference: OverlayExpansionPreference,
+        sizePreference: OverlaySizePreference
     ) {
         self.anchorSource = anchorSource
         self.bridge = bridge
         self.artworkProvider = artworkProvider
-        self.blurredArtworkProvider = blurredArtworkProvider
         self.lyricsProvider = lyricsProvider
         self.visibilityPreference = visibilityPreference
         self.positionPreference = positionPreference
+        self.expansionPreference = expansionPreference
         self.sizePreference = sizePreference
-        self.blurredBackgroundPreference = blurredBackgroundPreference
 
-        let overlayView = OverlayCardView()
-        self.overlayView = overlayView
+        let discView = DiscView()
+        let nowPlayingView = NowPlayingView()
+        self.discView = discView
+        self.nowPlayingView = nowPlayingView
 
-        let initialSize = Self.clamped(sizePreference.size ?? OverlayCardView.defaultSize)
+        let startsExpanded = expansionPreference.isExpanded
+        let initialView: NSView = startsExpanded ? nowPlayingView : discView
+        let initialSize = startsExpanded ? (sizePreference.size ?? NowPlayingView.size) : initialView.frame.size
+        let initialOrigin = positionPreference.origin ?? Self.defaultOrigin(for: initialSize)
 
-        // A remembered position can go stale between launches — a display
-        // disconnected, a screen arrangement changed — and must never leave
-        // the Overlay stranded off every currently attached screen.
-        let initialOrigin = OverlayOrigin.resolve(
-            remembered: positionPreference.origin,
-            size: initialSize,
-            screens: NSScreen.screens.map(\.frame),
-            fallback: Self.defaultOrigin(for: initialSize)
-        )
+        self.window = OverlayWindow(contentView: initialView)
+        // Clamped for the same reason every content swap is: a position
+        // remembered from a shorter card would otherwise put this one's top
+        // edge off the screen, invisible and unreachable.
+        let initialFrame = OverlayWindow.clampedToScreen(NSRect(origin: initialOrigin, size: initialSize))
+        window.setFrame(initialFrame, display: true)
+        if startsExpanded {
+            enableCardResizing()
+            primeExpandedState()
+        }
 
-        self.window = OverlayWindow(contentView: overlayView)
-        window.minSize = Self.minimumSize
-        window.maxSize = Self.maximumSize
-        window.setFrame(NSRect(origin: initialOrigin, size: initialSize), display: true)
-        // Requires a real window to ask for — nothing before this line can
-        // reach it, since `standardWindowButton` only exists once the
-        // window itself (with `.closable` in its `styleMask`) does.
-        overlayView.installCloseButton(window.standardWindowButton(.closeButton)!)
-        self.currentLayout = OverlayLayout.resolve(size: initialSize)
-        overlayView.update(layout: currentLayout)
-        overlayView.update(blurredBackgroundEnabled: blurredBackgroundPreference.isEnabled)
-
-        overlayView.onTogglePlayPause = { [weak self] in
+        discView.onClick = { [weak self] in self?.expand() }
+        // The card deliberately has no `onClick`: clicking it used to collapse
+        // back to the Disc, which fought with resizing it. The chrome bar's red
+        // dot is now the only way back.
+        nowPlayingView.onClose = { [weak self] in self?.collapse() }
+        nowPlayingView.onShare = { [weak self] in self?.copyTrackLink() }
+        nowPlayingView.onBackgroundColorChanged = { [weak self] isOn in
+            guard let self else { return }
+            self.backgroundColorPreference.isEnabled = isOn
+            self.nowPlayingView.setBackgroundColorEnabled(isOn)
+        }
+        nowPlayingView.onResized = { [weak self] in self?.sizeChanged() }
+        nowPlayingView.onTogglePlayPause = { [weak self] in
             guard let self else { return }
             try? (self.isPlaying ? self.bridge.pause() : self.bridge.play())
         }
-        overlayView.onSkipToNext = { [weak self] in try? self?.bridge.skipToNext() }
-        overlayView.onSkipToPrevious = { [weak self] in try? self?.bridge.skipToPrevious() }
-        overlayView.onSeek = { [weak self] position in try? self?.bridge.seek(to: position) }
-        overlayView.onVolumeChange = { [weak self] percent in try? self?.bridge.setVolume(to: percent) }
-        overlayView.onToggleLyrics = { [weak self] in self?.toggleLyrics() }
-        overlayView.onToggleShuffle = { [weak self] in try? self?.bridge.toggleShuffle() }
-        overlayView.onToggleRepeat = { [weak self] in try? self?.bridge.toggleRepeat() }
-        overlayView.onShare = { [weak self] in self?.shareCurrentTrack() }
-        overlayView.onToggleBlurredBackground = { [weak self] isEnabled in
+        nowPlayingView.onSkipToNext = { [weak self] in try? self?.bridge.skipToNext() }
+        nowPlayingView.onSkipToPrevious = { [weak self] in try? self?.bridge.skipToPrevious() }
+        nowPlayingView.onSeek = { [weak self] position in try? self?.bridge.seek(to: position) }
+        nowPlayingView.onVolumeChange = { [weak self] percent in try? self?.bridge.setVolume(to: percent) }
+        nowPlayingView.onToggleLyrics = { [weak self] in self?.toggleLyrics() }
+        nowPlayingView.onToggleShuffle = { [weak self] in
             guard let self else { return }
-            self.blurredBackgroundPreference.isEnabled = isEnabled
-            self.applyBackgroundImage()
+            try? self.bridge.setShuffling(!self.isShuffling)
+            self.reconcileToggleState()
         }
-        // The real close button routes through `windowShouldClose(_:)`
-        // (see `OverlayWindow`), not a direct target/action — this is the
-        // one choke point every path that could ever close the window
-        // funnels through. Same visibility mechanism the menu bar's "Show
-        // Overlay" toggle uses — not a parallel one.
-        window.onCloseRequested = { [weak self] in self?.hideOverlay() }
+        nowPlayingView.onToggleRepeat = { [weak self] in
+            guard let self else { return }
+            try? self.bridge.setRepeating(!self.isRepeating)
+            self.reconcileToggleState()
+        }
 
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
@@ -210,11 +167,6 @@ final class OverlayController {
         }
 
         refreshVisibility()
-
-        Task { [weak self] in
-            guard let self, let volume = try? self.bridge.currentVolume() else { return }
-            self.overlayView.updateVolume(volume)
-        }
 
         anchorSource.onAnchor { [weak self] state in
             self?.render(state)
@@ -240,47 +192,105 @@ final class OverlayController {
         }
     }
 
-    /// Hides the Overlay without closing/deallocating its window — what
-    /// the real close button's `windowShouldClose(_:)` interception
-    /// (`OverlayWindow.onCloseRequested`) resolves to.
-    private func hideOverlay() {
-        visibilityPreference.isVisible = false
-        refreshVisibility()
-        onVisibilityChangedByCloseButton?()
-    }
-
     private func positionMoved() {
         positionPreference.origin = window.frame.origin
     }
 
+    /// Persists the card's new size and, if the Lyrics view is showing,
+    /// rescales it immediately — resizing must feel live as the listener
+    /// drags an edge, not wait for the next Anchor or 30fps tick, which
+    /// could be up to a re-anchor interval away while paused.
     private func sizeChanged() {
-        let size = window.frame.size
-        sizePreference.size = size
-        let previousControls: Set<OverlayLayout.CompactControl>? = {
-            guard case .compact(let controls) = currentLayout else { return nil }
-            return controls
-        }()
-        currentLayout = OverlayLayout.resolve(size: size, previousControls: previousControls)
-        overlayView.update(layout: currentLayout)
+        guard expansionPreference.isExpanded else { return }
+        sizePreference.size = window.frame.size
+        refreshLyricsDisplay(anchorSource.currentEstimate())
     }
 
-    /// Copies the current Track's Spotify share link to the clipboard —
-    /// does nothing at all, not even clearing the clipboard, when there's
-    /// no valid link to share (`SpotifyShareLink`'s own Fail Closed policy
-    /// for a Non-Lyrical Item or no current Track).
-    private func shareCurrentTrack() {
-        guard let url = SpotifyShareLink.resolve(uri: currentTrackURI) else { return }
+    /// Grows the Disc into the Now Playing card in place — the persisted
+    /// card size if there is one, otherwise the default — then reads
+    /// Spotify's actual current volume so the volume slider starts from
+    /// the real value — touching it before that would otherwise jump
+    /// Spotify's volume to wherever the thumb happened to be drawn.
+    private func expand() {
+        guard expansionPreference.isExpanded == false else { return }
+        expansionPreference.isExpanded = true
+        isShowingLyrics = false
+        nowPlayingView.resetToArtwork()
+        window.setContent(nowPlayingView, size: sizePreference.size ?? NowPlayingView.size, animated: true)
+        enableCardResizing()
 
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        primeExpandedState()
+    }
+
+    /// Reads the state the card can't infer from an Anchor — Spotify's actual
+    /// volume, shuffle, and repeat — so the controls start out matching reality
+    /// rather than a default. Needed on a fresh expand *and* at launch, since an
+    /// Overlay restored in its Expanded state never passes through `expand()`
+    /// and would otherwise show an empty volume slider until it was collapsed
+    /// and reopened.
+    private func primeExpandedState() {
+        nowPlayingView.update(backgroundColorEnabled: backgroundColorPreference.isEnabled)
+        nowPlayingView.setBackgroundColorEnabled(backgroundColorPreference.isEnabled)
+        Task { [weak self] in
+            guard let self, let volume = try? self.bridge.currentVolume() else { return }
+            self.nowPlayingView.updateVolume(volume)
+        }
+        reconcileToggleState()
+    }
+
+    /// Re-reads shuffle and repeat from Spotify and repaints the two buttons.
+    /// Called when the card expands and after either is toggled, rather than on
+    /// every Anchor — neither changes often enough to be worth an Apple Event
+    /// per frame.
+    private func reconcileToggleState() {
+        Task { [weak self] in
+            guard let self, let state = try? self.bridge.currentToggleState() else { return }
+            self.isShuffling = state.isShuffling
+            self.isRepeating = state.isRepeating
+            self.nowPlayingView.update(isShuffling: state.isShuffling, isRepeating: state.isRepeating)
+        }
+    }
+
+    private func collapse() {
+        guard expansionPreference.isExpanded else { return }
+        expansionPreference.isExpanded = false
+        window.setResizable(false)
+        window.setContent(discView, animated: true)
+    }
+
+    /// Sets the card's resize bounds before turning resizing on — in that
+    /// order, so there's no moment the listener could grab an edge before
+    /// bounds exist to enforce.
+    /// The card is resized by `WindowResizer`, which sets the window's frame
+    /// itself, so the `.resizable` style mask is not needed — and is actively
+    /// harmful. Turning it on makes AppKit re-derive the window's size from the
+    /// content view's constraints on its next layout pass, which collapsed the
+    /// card to the width of its widest required row and then ignored every
+    /// attempt to widen it again. Leaving the mask alone keeps the frame ours.
+    private func enableCardResizing() {
+        window.minSize = NowPlayingView.minimumSize
+        window.maxSize = NowPlayingView.maximumSize
+    }
+
+    /// Puts a link to the current Track on the pasteboard — the miniplayer's
+    /// share button. Spotify's own URI is not a link anyone can open in a
+    /// browser, so it is rewritten into the `open.spotify.com` form first.
+    private func copyTrackLink() {
+        guard let uri = currentTrackURI else { return }
+        let identifier = uri.replacingOccurrences(of: "spotify:track:", with: "")
+        guard identifier != uri else { return }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString("https://open.spotify.com/track/\(identifier)", forType: .string)
     }
 
     private func toggleLyrics() {
         isShowingLyrics.toggle()
         if isShowingLyrics {
-            overlayView.showLyrics()
+            nowPlayingView.showLyrics()
         } else {
-            overlayView.showNowPlaying()
+            nowPlayingView.showArtwork()
         }
     }
 
@@ -307,40 +317,9 @@ final class OverlayController {
 
             guard self.currentTrackURI == track.uri else { return }
             guard case .found(let data) = outcome, let image = NSImage(data: data) else { return }
-            self.currentArtworkImage = image
-            self.overlayView.updateArtwork(image)
-            self.applyBackgroundImage()
-
-            self.reconcileBlurredBackground(for: track, artwork: data)
+            self.discView.updateArtwork(image)
+            self.nowPlayingView.updateArtwork(image)
         }
-    }
-
-    /// Layered on top of `reconcileArtwork`'s own fetch, per the ticket's
-    /// own note — no fetch path of its own, just the bytes already found.
-    /// Only called once real artwork bytes are confirmed in hand, so
-    /// `BlurredArtworkProvider` never needs to reason about `.noArtwork`/
-    /// `.unavailable` outcomes itself.
-    private func reconcileBlurredBackground(for track: Track, artwork data: Data) {
-        Task { [weak self] in
-            guard let self else { return }
-            let outcome = await self.blurredArtworkProvider.blurredBackground(for: track, artwork: data)
-
-            guard self.currentTrackURI == track.uri else { return }
-            guard case .found(let blurredData) = outcome, let image = NSImage(data: blurredData) else { return }
-            self.currentBlurredBackgroundImage = image
-            self.applyBackgroundImage()
-        }
-    }
-
-    /// Whichever image Full Layout's background should currently show —
-    /// the blurred/color-boosted treatment when enabled and ready, the
-    /// plain artwork otherwise — recomputed whenever either the images or
-    /// the toggle itself changes, since this is the one place that knows
-    /// both.
-    private func applyBackgroundImage() {
-        guard let plainImage = currentArtworkImage else { return }
-        let image = blurredBackgroundPreference.isEnabled ? (currentBlurredBackgroundImage ?? plainImage) : plainImage
-        overlayView.updateBlurredBackground(image)
     }
 
     /// One lookup per Track, sharing `LyricsProvider` with the menu bar —
@@ -367,11 +346,11 @@ final class OverlayController {
         isPlaying = state.isPlaying
         let now = ContinuousClock.Instant.now
         rotation.anchor(isPlaying: state.isPlaying, at: now)
-        overlayView.update(rotationDegrees: rotation.angle(at: now))
+        discView.update(rotationDegrees: rotation.angle(at: now))
 
-        overlayView.update(isPlaying: state.isPlaying)
+        nowPlayingView.update(isPlaying: state.isPlaying)
         if let position = state.position {
-            overlayView.updateSeek(position: position)
+            nowPlayingView.updateSeek(position: position)
         }
         refreshLyricsDisplay(state)
 
@@ -397,30 +376,29 @@ final class OverlayController {
         spinTimer = timer
     }
 
-    /// New Track, once per Track: resets the artwork/track-info placeholder,
-    /// kicks off its lookup, and gives the seek slider its range. A
-    /// trackless blip forgets the URI, exactly like the menu bar's own
-    /// lyrics-lookup rule, so the same Track reappearing re-triggers both.
+    /// New Track, once per Track: resets the artwork placeholder, kicks off
+    /// its lookup, and gives the seek slider its range. A trackless blip
+    /// forgets the URI, exactly like the menu bar's own lyrics-lookup rule,
+    /// so the same Track reappearing re-triggers both.
     private func reconcileTrackChange(with state: PlaybackState) {
         guard let track = state.track else {
             if currentTrackURI != nil {
                 currentTrackURI = nil
                 currentLyrics = nil
-                currentArtworkImage = nil
-                currentBlurredBackgroundImage = nil
-                overlayView.updatePlaceholder()
+                discView.updatePlaceholder()
+                nowPlayingView.updatePlaceholder()
+                nowPlayingView.clearTrackInfo()
             }
             return
         }
         guard track.uri != currentTrackURI else { return }
         currentTrackURI = track.uri
         currentLyrics = nil
-        currentArtworkImage = nil
-        currentBlurredBackgroundImage = nil
 
-        overlayView.updatePlaceholder()
-        overlayView.updateTrackInfo(name: track.name, artist: track.artist)
-        overlayView.configureSeek(duration: track.duration)
+        discView.updatePlaceholder()
+        nowPlayingView.updatePlaceholder()
+        nowPlayingView.updateTrackInfo(name: track.name, artist: track.artist)
+        nowPlayingView.configureSeek(duration: track.duration)
 
         reconcileArtwork(for: track)
         reconcileLyrics(for: track)
@@ -428,22 +406,22 @@ final class OverlayController {
 
     private func redrawPlayback() {
         let now = ContinuousClock.Instant.now
-        overlayView.update(rotationDegrees: rotation.angle(at: now))
+        discView.update(rotationDegrees: rotation.angle(at: now))
 
         let estimate = anchorSource.currentEstimate()
         if let position = estimate.position {
-            overlayView.updateSeek(position: position)
+            nowPlayingView.updateSeek(position: position)
         }
         refreshLyricsDisplay(estimate)
     }
 
-    /// What the Lyrics face shows, composing `OverlayDisplay` (hidden/idle/
-    /// lines, the same way it always has — the Overlay is always considered
-    /// "visible" here, since the whole widget's own visibility is a
-    /// separate concern, `refreshVisibility()`) with `LyricsWindow` for the
-    /// "genuine lyrics" case, at whatever line count `currentLayout`
-    /// currently calls for — Full Layout's own resolved scale, or Compact
-    /// Layout's fixed default. `nextChange` goes unused: rather than arm a
+    /// What the Lyrics view shows, composing three Core seams: `OverlayDisplay`
+    /// decides hidden/idle/lines the same way it always has (the Overlay is
+    /// always considered "visible" here, since the whole widget's own
+    /// visibility is a separate concern — `refreshVisibility()`); only in
+    /// the "genuine lyrics" case does `LyricsWindow` and `LyricsViewScale`
+    /// come in, resolving how many surrounding lines the card's current
+    /// height calls for. `nextChange` goes unused: rather than arm a
     /// separate precise per-transition timer the way the retired Overlay
     /// did, this rides the same continuous redraw already driving the spin
     /// and seek slider, which is frequent enough that no line change is
@@ -453,13 +431,13 @@ final class OverlayController {
 
         switch answer.content {
         case .hidden:
-            overlayView.updateLyrics(.nothingPlaying)
+            nowPlayingView.updateLyrics(.nothingPlaying)
 
         case .idle(let trackName):
-            overlayView.updateLyrics(.idle(trackName: trackName))
+            nowPlayingView.updateLyrics(.idle(trackName: trackName))
 
         case .lines(.instrumentalGap):
-            overlayView.updateLyrics(.gap)
+            nowPlayingView.updateLyrics(.gap)
 
         case .lines(.lines):
             // `OverlayDisplay` only reaches `.lines` when both are known —
@@ -467,8 +445,12 @@ final class OverlayController {
             // beyond the single Active/Next pair `OverlayDisplay` itself
             // answers.
             guard let position = state.position, let lyrics = currentLyrics else { return }
-            let entries = LyricsWindow.resolve(at: position, in: lyrics, lineCount: currentLyricsLineCount)
-            overlayView.updateLyrics(.lines(entries))
+            // The panel the lines are drawn in, not the whole card: scaling to
+            // the card sized every line for a box roughly twice as tall as the
+            // one it actually had, which is what made the lyrics overflow.
+            let scale = LyricsViewScale.resolve(forHeight: nowPlayingView.lyricsAreaHeight)
+            let entries = LyricsWindow.resolve(at: position, in: lyrics, lineCount: scale.lineCount)
+            nowPlayingView.updateLyrics(.lines(entries, fontSize: scale.fontSize))
         }
     }
 
@@ -477,22 +459,6 @@ final class OverlayController {
         return NSPoint(
             x: screen.visibleFrame.maxX - size.width - defaultTrailingInset,
             y: screen.visibleFrame.maxY - size.height - defaultTopInset
-        )
-    }
-
-    /// A remembered size can go stale between launches the same way a
-    /// remembered origin can (`OverlayOrigin.resolve`'s own concern) — an
-    /// older app version's own `maximumSize`/`minimumSize` were once wider,
-    /// or the size was never valid to begin with. `NSWindow.setFrame(_:display:)`
-    /// only enforces `minSize`/`maxSize` during an interactive drag-resize,
-    /// never for a programmatic call like this one's — an unclamped stale
-    /// size here would silently launch the window wider or narrower than
-    /// this controller's own documented bounds, which `OverlayCardView`'s
-    /// own layout (`maximumRowWidth` in particular) assumes never happens.
-    private static func clamped(_ size: NSSize) -> NSSize {
-        NSSize(
-            width: min(max(size.width, minimumSize.width), maximumSize.width),
-            height: min(max(size.height, minimumSize.height), maximumSize.height)
         )
     }
 }

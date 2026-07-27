@@ -1,16 +1,15 @@
 import AppKit
 import LyrifyCore
 
-/// The Overlay's Lyrics face: the Active Line prominent, the surrounding
-/// lines `LyricsWindow` resolves dimmed around it — at whatever line count
-/// and font size `OverlayLayout` last resolved for the Overlay's current
-/// size, `defaultLineCount`/`defaultFontSize` until then. Also draws the
-/// three cases that have no window to show: "nothing playing," the Idle
-/// State's honest naming, and an Instrumental Gap.
+/// The Overlay's Lyrics view: the Active Line prominent, the surrounding
+/// lines `LyricsWindow` resolves dimmed around it — as many as the resized
+/// card's height calls for, at the font size `LyricsViewScale` maps to it.
+/// Also draws the three cases that have no window to show: "nothing
+/// playing," the Idle State's honest naming, and an Instrumental Gap.
 ///
 /// Deliberately untested — a rendering leaf with no decisions of its own;
 /// every decision it draws comes from `OverlayDisplay`, `LineSelection`,
-/// `LyricsWindow`, and `OverlayLayout`.
+/// `LyricsWindow`, and `LyricsViewScale`.
 final class LyricsCardView: NSView {
     /// What this view draws — computed by `OverlayController` from the
     /// Core seams above, never derived here.
@@ -18,45 +17,31 @@ final class LyricsCardView: NSView {
         case nothingPlaying
         case idle(trackName: String)
         case gap
-        case lines([LyricsWindow.Entry])
+        case lines([LyricsWindow.Entry], fontSize: CGFloat)
     }
 
-    /// The line count/font size shown before Full Layout scaling ever
-    /// applies — Compact Layout's own Lyrics Face, which doesn't grow with
-    /// height the way Full Layout's does, keeps these unconditionally.
-    /// Matches the values this view always used before that scaling
-    /// existed.
-    static let defaultLineCount = 3
-    static let defaultFontSize: CGFloat = 15
-
-    /// Shared with `OverlayCardView`'s track-info placeholder, so the two
-    /// can't drift on what "nothing known yet" is called.
-    static let nothingPlayingText = "Nothing Playing"
-
+    private static let maxLines = LyricsViewScale.maximumLineCount
     private static let idleAlpha: CGFloat = 0.6
     private static let dimmedAlpha: CGFloat = 0.55
     private static let instrumentalGapPlaceholder = "♪"
 
-    /// One label per line `OverlayLayout` could ever resolve, created once
-    /// and shown/hidden per `Content` and the current `lineCount` — cheaper
-    /// and simpler than adding/removing arranged subviews every update.
+    /// One label per possible line, created once and shown/hidden per
+    /// `Content` — cheaper and simpler than adding/removing arranged
+    /// subviews every update.
     private var labels: [NSTextField] = []
     private let stack = NSStackView()
 
-    /// The scale currently in force — `updateScale` moves these away from
-    /// their defaults as `OverlayLayout` resolves differently for the
-    /// Overlay's current size; `update(with:)` re-renders `content` at
-    /// whatever's current here.
-    private var lineCount = defaultLineCount
-    private var fontSize: CGFloat = defaultFontSize
-
-    /// The last content drawn — kept only so `updateScale` can re-render
-    /// it immediately at a new scale, without waiting for the next content
-    /// update that would otherwise carry it.
-    private var content: Content = .nothingPlaying
-
     init() {
         super.init(frame: .zero)
+
+        // Whatever the lyrics need, they never get a vote on how big the card
+        // is. Without this the two feed each other without limit: a taller card
+        // makes `LyricsViewScale` ask for more lines, those lines demand more
+        // height, the card grows to supply it, and around again — which is how
+        // a 300×400 card ended up over a thousand points on a side. Lines that
+        // don't fit are clipped instead.
+        wantsLayer = true
+        layer?.masksToBounds = true
 
         stack.orientation = .vertical
         stack.alignment = .centerX
@@ -64,7 +49,7 @@ final class LyricsCardView: NSView {
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
-        for _ in 0..<OverlayLayout.maximumLineCount {
+        for _ in 0..<Self.maxLines {
             let label = NSTextField(labelWithString: "")
             label.textColor = .white
             label.alignment = .center
@@ -72,14 +57,21 @@ final class LyricsCardView: NSView {
             label.maximumNumberOfLines = 1
             label.isHidden = true
             label.translatesAutoresizingMaskIntoConstraints = false
+            // Part of the same rule: a long or numerous set of lines must be
+            // free to be clipped rather than push the card wider or taller.
+            for axis in [NSLayoutConstraint.Orientation.horizontal, .vertical] {
+                label.setContentCompressionResistancePriority(.defaultLow, for: axis)
+                label.setContentHuggingPriority(.defaultLow, for: axis)
+            }
             labels.append(label)
+            // Added to the hierarchy *before* the width constraint below is
+            // activated: that constraint spans the label and this view, and
+            // activating it while the label still has no superview throws —
+            // the two have no common ancestor to resolve it against.
             stack.addArrangedSubview(label)
-            // Relative to this view's own width, not a fixed constant, so
-            // this stays correct if the widget's fixed size ever changes.
-            // Must come after addArrangedSubview: activating a constraint
-            // between the label and this view before the label is anywhere
-            // in this view's hierarchy has no common ancestor to resolve
-            // against, and Auto Layout raises for it.
+            // Relative to this view's own width, not a fixed constant: the
+            // card is resizable now, so a hardcoded cap would stay stale as
+            // it grows wider, letting truncation kick in far too early.
             label.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -32).isActive = true
         }
 
@@ -95,40 +87,27 @@ final class LyricsCardView: NSView {
     }
 
     /// Passes every click through to whatever hosts this view — it has no
-    /// interactive elements of its own, and a click anywhere non-interactive
-    /// on the widget only ever starts a drag.
+    /// interactive elements of its own, and a click here means "collapse,"
+    /// the same as a click anywhere else non-interactive on the card.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// Moves the line count/font size away from their defaults — called by
-    /// `OverlayCardView.update(layout:)` on every resolved `OverlayLayout`,
-    /// Full Layout's own scale or Compact Layout's default alike.
-    /// Re-renders `content` immediately at the new scale so a live resize
-    /// never waits for the next natural content update to reflect it.
-    func updateScale(lineCount: Int, fontSize: CGFloat) {
-        guard self.lineCount != lineCount || self.fontSize != fontSize else { return }
-        self.lineCount = lineCount
-        self.fontSize = fontSize
-        update(with: content)
-    }
-
     func update(with content: Content) {
-        self.content = content
         switch content {
         case .nothingPlaying:
-            showSingleLine(Self.nothingPlayingText, alpha: Self.idleAlpha)
+            showSingleLine("Nothing Playing", fontSize: LyricsViewScale.minimumFontSize, alpha: Self.idleAlpha)
 
         case .idle(let trackName):
-            showSingleLine(trackName, alpha: Self.idleAlpha)
+            showSingleLine(trackName, fontSize: LyricsViewScale.minimumFontSize, alpha: Self.idleAlpha)
 
         case .gap:
-            showSingleLine(Self.instrumentalGapPlaceholder, alpha: Self.idleAlpha)
+            showSingleLine(Self.instrumentalGapPlaceholder, fontSize: LyricsViewScale.minimumFontSize, alpha: Self.idleAlpha)
 
-        case .lines(let entries):
-            showWindow(entries)
+        case .lines(let entries, let fontSize):
+            showWindow(entries, fontSize: fontSize)
         }
     }
 
-    private func showSingleLine(_ text: String, alpha: CGFloat) {
+    private func showSingleLine(_ text: String, fontSize: CGFloat, alpha: CGFloat) {
         for (index, label) in labels.enumerated() {
             guard index == 0 else {
                 label.isHidden = true
@@ -141,9 +120,9 @@ final class LyricsCardView: NSView {
         }
     }
 
-    private func showWindow(_ entries: [LyricsWindow.Entry]) {
+    private func showWindow(_ entries: [LyricsWindow.Entry], fontSize: CGFloat) {
         for (index, label) in labels.enumerated() {
-            guard index < entries.count, index < lineCount else {
+            guard index < entries.count else {
                 label.isHidden = true
                 continue
             }

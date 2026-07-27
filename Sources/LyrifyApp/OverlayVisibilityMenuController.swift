@@ -31,12 +31,4 @@ final class OverlayVisibilityMenuController: NSObject {
         menuItem.state = isVisible ? .on : .off
         onChange()
     }
-
-    /// Re-reads `preference.isVisible` into the checkbox — for whenever
-    /// something other than this menu item itself changed it (the Overlay's
-    /// own hide button), so the two never disagree about whether the
-    /// Overlay is showing.
-    func refreshState() {
-        menuItem.state = preference.isVisible ? .on : .off
-    }
 }

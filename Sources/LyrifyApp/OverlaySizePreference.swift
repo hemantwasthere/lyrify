@@ -1,15 +1,16 @@
 import Foundation
 
-/// The size the listener last resized the Overlay to, persisted across
-/// launches alongside its position (`OverlayPositionPreference`). Nil until
-/// the Overlay has been resized at least once — the caller decides what
-/// default to use meanwhile, this type only remembers.
+/// The Expanded card's dragged-resize dimensions, persisted across launches
+/// alongside its position. Nil until the listener has resized it at least
+/// once — the caller decides what default to use meanwhile, this type only
+/// remembers. The Minimized Disc has its own fixed size and never consults
+/// this.
 ///
 /// Deliberately untested — a thin `UserDefaults` wrapper with no decision of
 /// its own to get wrong.
 final class OverlaySizePreference {
-    private static let widthKey = "OverlaySizeWidth"
-    private static let heightKey = "OverlaySizeHeight"
+    private static let widthKey = "OverlayCardWidth"
+    private static let heightKey = "OverlayCardHeight"
 
     private let defaults: UserDefaults
 

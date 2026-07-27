@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Palette
+
+   Held as plain custom properties rather than straight in `@theme` because the
+   values swap at runtime — by OS preference, or by a `data-theme` attribute
+   that overrides it. `@theme inline` below points Tailwind's colour utilities
+   at these, so `bg-surface` resolves through the variable and follows the
+   theme instead of being frozen at build time.
+--------------------------------------------------------------------------- */
+
+:root {
+  --bg: #10201b;
+  --surface: #182b24;
+  --surface-2: #1f352c;
+  --text: #ece4d3;
+  --text-dim: #8fa79b;
+  --accent: #e6a339;
+  --accent-ink: #241608;
+  --border: rgba(236, 228, 211, 0.12);
+  --shadow-tint: rgba(0, 0, 0, 0.35);
+}
+
+/* `:not([data-theme="dark"])` so an explicit dark choice still wins on a
+   light-set OS. Without it the media query and the attribute fight, and the
+   later rule wins by source order rather than by intent. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f2ece0;
+    --surface: #e9e0cd;
+    --surface-2: #ded2b7;
+    --text: #201c15;
+    --text-dim: #6b6250;
+    --accent: #a86419;
+    --accent-ink: #fdf6e8;
+    --border: rgba(32, 28, 21, 0.14);
+    --shadow-tint: rgba(32, 28, 21, 0.12);
+  }
+}
+
+:root[data-theme="light"] {
+  --bg: #f2ece0;
+  --surface: #e9e0cd;
+  --surface-2: #ded2b7;
+  --text: #201c15;
+  --text-dim: #6b6250;
+  --accent: #a86419;
+  --accent-ink: #fdf6e8;
+  --border: rgba(32, 28, 21, 0.14);
+  --shadow-tint: rgba(32, 28, 21, 0.12);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-border: var(--border);
+
+  /* `--font-display` is the variable next/font/local generates in layout.tsx,
+     so the fallback stack lives with the family rather than in the loader. */
+  --font-display: var(--font-fraunces), Georgia, ui-serif, serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --shadow-card: 0 24px 60px -24px var(--shadow-tint);
+  --shadow-lift: 0 8px 24px -8px var(--shadow-tint);
+
+  --animate-disc: disc-spin 6s linear infinite;
+  --animate-lyric: lyric-cycle 8s linear infinite;
+}
+
+@keyframes disc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The highlight sweeps one line at a time: bright and heavy for the first two
+   beats, then handed to the next line. Four lines share the cycle by holding
+   staggered negative delays, so the run is already in progress on load. */
+@keyframes lyric-cycle {
+  0%,
+  16% {
+    color: var(--accent);
+    font-weight: 600;
+    opacity: 1;
+  }
+  30%,
+  100% {
+    color: var(--text-dim);
+    font-weight: 400;
+    opacity: 0.5;
+  }
+}
+
+@layer base {
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    text-wrap: balance;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Vinyl
+
+   Two decorative discs — the spinning one in the hero mockup and the still one
+   above the download heading. Layered radial gradients cutting grooves out of
+   the surface colour: legible as CSS, unreadable as a Tailwind arbitrary
+   value, so they stay here rather than being forced inline.
+--------------------------------------------------------------------------- */
+
+@utility vinyl-sm {
+  background:
+    radial-gradient(circle at center, var(--accent) 0 6px, transparent 7px),
+    repeating-radial-gradient(
+      circle at center,
+      var(--surface-2) 0 2px,
+      var(--bg) 2px 4px
+    );
+}
+
+@utility vinyl-lg {
+  background:
+    radial-gradient(circle at center, var(--accent) 0 10px, transparent 11px),
+    repeating-radial-gradient(
+      circle at center,
+      var(--surface-2) 0 3px,
+      var(--bg) 3px 6px
+    );
+}
+
+/* Stop the motion, but keep the point of the mockup: one line still reads as
+   the line being sung. Dropping the animation alone would leave four equally
+   dim lines saying nothing about what the app does. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-disc,
+  .animate-lyric {
+    animation: none;
+  }
+
+  .animate-lyric:first-child {
+    color: var(--accent);
+    font-weight: 600;
+    opacity: 1;
+  }
+}

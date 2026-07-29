@@ -120,7 +120,7 @@ final class DragDotsView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
-        SpotifyPalette.glyphRest.setFill()
+        OverlayPalette.glyphRest.setFill()
         for row in 0..<rows {
             for column in 0..<columns {
                 let origin = NSPoint(

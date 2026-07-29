@@ -18,7 +18,7 @@ final class OverlayController {
     private let discView: DiscView
     private let nowPlayingView: NowPlayingView
     private let anchorSource: PlaybackAnchorSource
-    private let bridge: SpotifyBridge
+    private let bridge: PlayerBridge
     private let artworkProvider: ArtworkProvider
     private let lyricsProvider: LyricsProvider
     private let positionPreference: OverlayPositionPreference
@@ -74,13 +74,13 @@ final class OverlayController {
 
     // nonisolated(unsafe) so deinit may remove it; safe because it's written
     // once in init and never mutated again. Same rationale as
-    // `SpotifyNotificationObserver`.
+    // `PlayerNotificationObserver`.
     private nonisolated(unsafe) var moveObserver: NSObjectProtocol?
     private nonisolated(unsafe) var resizeObserver: NSObjectProtocol?
 
     init(
         anchorSource: PlaybackAnchorSource,
-        bridge: SpotifyBridge,
+        bridge: PlayerBridge,
         artworkProvider: ArtworkProvider,
         lyricsProvider: LyricsProvider,
         visibilityPreference: OverlayVisibilityPreference,

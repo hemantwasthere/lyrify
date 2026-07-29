@@ -1,12 +1,21 @@
 import AppKit
 
-/// Spotify's own colour values, so every surface in the Overlay reads as one
-/// system rather than each view inventing its own greys. Taken from Spotify's
-/// design system and matched against its miniplayer: a near-black card, `#B3B3B3`
-/// subdued text, and `#1ED760` for anything switched on.
+/// The Overlay's colour values, so every surface in it reads as one system
+/// rather than each view inventing its own greys.
+///
+/// The greys are still Spotify's, measured against its miniplayer — a near-black
+/// card and `#B3B3B3` subdued text — because the Overlay is shaped after that
+/// miniplayer and the values are simply the right ones. The accent is not:
+/// anything switched on wears Lyrify's own colour, which is why this is named
+/// for the Overlay rather than for Spotify.
+///
+/// Two different things here want the word "accent", so they are kept apart.
+/// `accent` is the fixed brand colour marking a control as on. `tint(from:)`
+/// and `fallbackTint` are the per-Track colour drawn behind the cover, which
+/// the comments throughout have always called the tint.
 ///
 /// Deliberately untested — a table of constants with no decision of its own.
-enum SpotifyPalette {
+enum OverlayPalette {
     /// The card's background: black, not near-black.
     ///
     /// The difference matters more than it looks. Spotify's card measures 0.00
@@ -24,7 +33,7 @@ enum SpotifyPalette {
     /// text on black but disappears into album art — these sit over the artwork
     /// itself and have to hold up against a light cover.
     static let glyphRest = NSColor(srgbRed: 0.92, green: 0.92, blue: 0.92, alpha: 1)
-    static let green = NSColor(srgbRed: 0.118, green: 0.843, blue: 0.376, alpha: 1)
+    static let accent = NSColor(srgbRed: 0.118, green: 0.843, blue: 0.376, alpha: 1)
 
     /// The unfilled part of a progress or volume bar — white at 30%, exactly
     /// what Spotify draws behind its own.
@@ -36,7 +45,7 @@ enum SpotifyPalette {
 
     /// The tint behind the art before any artwork is known — a neutral lift over
     /// `base`, so the gradient never disappears entirely between Tracks.
-    static let fallbackAccent = NSColor(srgbRed: 0.28, green: 0.28, blue: 0.29, alpha: 1)
+    static let fallbackTint = NSColor(srgbRed: 0.28, green: 0.28, blue: 0.29, alpha: 1)
 
     /// The same colour with its hue removed. Spotify's "Background color" switch
     /// does not black the panel out — turning it off leaves the identical wash in
@@ -58,10 +67,10 @@ enum SpotifyPalette {
     /// colour that *dominates*, so the pixels are binned by hue and the busiest
     /// bin wins, with saturated bins weighted up so a small band of strong colour
     /// beats a large expanse of near-grey.
-    static func accent(from image: NSImage) -> NSColor {
+    static func tint(from image: NSImage) -> NSColor {
         guard let dominant = dominant(of: image),
               let srgb = dominant.usingColorSpace(.sRGB)
-        else { return fallbackAccent }
+        else { return fallbackTint }
 
         var hue: CGFloat = 0
         var saturation: CGFloat = 0

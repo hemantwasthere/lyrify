@@ -3,9 +3,13 @@ import Foundation
 /// Turns the single delimited line produced by the Spotify scripting bridge
 /// into a `PlaybackState`.
 ///
+/// Spotify is the only player this parses for today — the line's shape is
+/// dictated by the AppleScript that produces it. The generic name describes the
+/// role, not a supported set.
+///
 /// Kept free of AppKit so the parsing — including the milliseconds conversion
 /// that ADR-0002 warns about — is testable without Spotify running.
-public enum SpotifyScriptOutput {
+public enum PlayerScriptOutput {
     /// ASCII unit separator. Chosen because it cannot appear in a track title
     /// or artist name, unlike any printable delimiter.
     public static let fieldSeparator = "\u{1F}"

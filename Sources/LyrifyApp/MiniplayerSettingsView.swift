@@ -139,7 +139,7 @@ final class ToggleSwitch: NSControl {
 
     private func refreshTrack() {
         layer?.backgroundColor = isOn
-            ? SpotifyPalette.green.cgColor
+            ? OverlayPalette.accent.cgColor
             : NSColor(calibratedWhite: 0.32, alpha: 1).cgColor
     }
 }
@@ -152,7 +152,7 @@ private final class DoneButton: NSButton {
         self.action = action
         isBordered = false
         wantsLayer = true
-        layer?.backgroundColor = SpotifyPalette.green.cgColor
+        layer?.backgroundColor = OverlayPalette.accent.cgColor
         layer?.cornerRadius = 15
         translatesAutoresizingMaskIntoConstraints = false
         attributedTitle = NSAttributedString(

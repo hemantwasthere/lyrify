@@ -6,7 +6,7 @@ import AppKit
 /// shuffle and repeat toggles turn green while they are on.
 ///
 /// AppKit gives `NSButton` no hover state at all, so each button carries its own
-/// tracking area and repaints itself — the same reason `SpotifyProgressBar`
+/// tracking area and repaints itself — the same reason `OverlayProgressBar`
 /// draws itself rather than wrapping `NSSlider`.
 ///
 /// Deliberately untested — an event-handling and drawing leaf, verified by hand.
@@ -125,11 +125,11 @@ final class MiniplayerButton: NSButton {
         case .primary:
             color = .black
         case .secondary:
-            color = isHovering ? SpotifyPalette.textPrimary : SpotifyPalette.glyphRest
+            color = isHovering ? OverlayPalette.textPrimary : OverlayPalette.glyphRest
         case .toggle:
             color = isOn
-                ? SpotifyPalette.green
-                : (isHovering ? SpotifyPalette.textPrimary : SpotifyPalette.glyphRest)
+                ? OverlayPalette.accent
+                : (isHovering ? OverlayPalette.textPrimary : OverlayPalette.glyphRest)
         }
 
         // Weight only really bites on the outline glyphs, where it goes into the

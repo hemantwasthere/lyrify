@@ -82,12 +82,12 @@ final class NowPlayingView: DraggableBackgroundView {
     private let infoStack = NSStackView()
     private let volumePopover = HoverPanel()
     private let settingsPanel = MiniplayerSettingsView()
-    private let titleLabel = MarqueeLabel(font: .systemFont(ofSize: 16, weight: .bold), color: SpotifyPalette.textPrimary)
-    private let artistLabel = MarqueeLabel(font: .systemFont(ofSize: 12, weight: .regular), color: SpotifyPalette.textSubdued)
+    private let titleLabel = MarqueeLabel(font: .systemFont(ofSize: 16, weight: .bold), color: OverlayPalette.textPrimary)
+    private let artistLabel = MarqueeLabel(font: .systemFont(ofSize: 12, weight: .regular), color: OverlayPalette.textSubdued)
     private let elapsedLabel = NSTextField(labelWithString: "0:00")
     private let remainingLabel = NSTextField(labelWithString: "0:00")
-    private let seekBar = SpotifyProgressBar()
-    private let volumeBar = SpotifyProgressBar()
+    private let seekBar = OverlayProgressBar()
+    private let volumeBar = OverlayProgressBar()
     private let gripGlyph = ResizeGripGlyph()
     private let resizer = WindowResizer()
     private let dotsHorizontal = DragDotsView(orientation: .horizontal)
@@ -115,7 +115,7 @@ final class NowPlayingView: DraggableBackgroundView {
     /// The tint the current artwork asks for, remembered even while the
     /// background-colour switch is off, so turning it back on does not have to
     /// wait for the next Track.
-    private var lastAccent = SpotifyPalette.fallbackAccent
+    private var lastTint = OverlayPalette.fallbackTint
     private var isBackgroundColorEnabled = true
 
     /// Where a just-committed seek asked to be. Spotify keeps reporting the old
@@ -137,7 +137,7 @@ final class NowPlayingView: DraggableBackgroundView {
         wantsLayer = true
         layer?.cornerRadius = 14
         layer?.masksToBounds = true
-        layer?.backgroundColor = SpotifyPalette.base.cgColor
+        layer?.backgroundColor = OverlayPalette.base.cgColor
         layer?.borderWidth = 1
         layer?.borderColor = NSColor.white.withAlphaComponent(0.07).cgColor
 
@@ -242,21 +242,21 @@ final class NowPlayingView: DraggableBackgroundView {
     func updateArtwork(_ image: NSImage) {
         artView.contentTintColor = nil
         artView.image = image
-        lastAccent = SpotifyPalette.accent(from: image)
-        setAccent(isBackgroundColorEnabled ? lastAccent : SpotifyPalette.desaturated(lastAccent))
+        lastTint = OverlayPalette.tint(from: image)
+        setTint(isBackgroundColorEnabled ? lastTint : OverlayPalette.desaturated(lastTint))
     }
 
     func updatePlaceholder() {
         artView.contentTintColor = OverlayArtworkPlaceholder.tint
         artView.image = OverlayArtworkPlaceholder.image(pointSize: 34)
-        setAccent(SpotifyPalette.fallbackAccent)
+        setTint(OverlayPalette.fallbackTint)
     }
 
     /// Cross-fades the tint rather than cutting to it, so a Track change eases
     /// into its new colour. Two stops of the same hue — bright at the top,
     /// sinking into the card's own black — so the art sits in the colour rather
     /// than on a flat block of it.
-    private func setAccent(_ color: NSColor) {
+    private func setTint(_ color: NSColor) {
         let animation = CABasicAnimation(keyPath: "colors")
         animation.duration = 0.45
         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -267,7 +267,7 @@ final class NowPlayingView: DraggableBackgroundView {
         // so much darker than Spotify's even once the hue was right.
         artPanel.gradient.colors = [
             color.cgColor,
-            color.blended(withFraction: 0.18, of: SpotifyPalette.base)?.cgColor ?? color.cgColor,
+            color.blended(withFraction: 0.18, of: OverlayPalette.base)?.cgColor ?? color.cgColor,
         ]
     }
 
@@ -426,7 +426,7 @@ final class NowPlayingView: DraggableBackgroundView {
         // sublayer instead means sizing it by hand from a parent's `layout()`,
         // which runs before nested subviews have their final bounds — so it
         // stays zero-sized and never draws.
-        artPanel.gradient.colors = [SpotifyPalette.fallbackAccent.cgColor, SpotifyPalette.base.cgColor]
+        artPanel.gradient.colors = [OverlayPalette.fallbackTint.cgColor, OverlayPalette.base.cgColor]
         // A layer's y axis runs upward, so (0.5, 1) is the *top*. Starting at 0
         // put the first colour at the bottom and rendered both of these gradients
         // upside down — the tint pooling at the bottom and the scrim at its
@@ -623,7 +623,7 @@ final class NowPlayingView: DraggableBackgroundView {
     /// does to its miniplayer.
     func setBackgroundColorEnabled(_ enabled: Bool) {
         isBackgroundColorEnabled = enabled
-        setAccent(enabled ? lastAccent : SpotifyPalette.desaturated(lastAccent))
+        setTint(enabled ? lastTint : OverlayPalette.desaturated(lastTint))
     }
 
     private func setSettingsVisible(_ visible: Bool) {
@@ -881,7 +881,7 @@ final class NowPlayingView: DraggableBackgroundView {
 
     private func style(_ label: NSTextField) {
         label.font = .systemFont(ofSize: 10, weight: .medium)
-        label.textColor = SpotifyPalette.textSubdued
+        label.textColor = OverlayPalette.textSubdued
         label.maximumNumberOfLines = 1
     }
 
@@ -946,7 +946,7 @@ private final class HoverPanel: NSView {
 /// `DraggableBackgroundView`, so dragging the Overlay still works from anywhere.
 protocol OverlayInteractive: NSView {}
 extension NSButton: OverlayInteractive {}
-extension SpotifyProgressBar: OverlayInteractive {}
+extension OverlayProgressBar: OverlayInteractive {}
 extension WindowResizer: OverlayInteractive {}
 
 /// The container holding the miniplayer's controls. Passes clicks on anything

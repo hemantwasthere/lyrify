@@ -7,8 +7,8 @@ import Testing
 /// dictionary. These tests pin down how that payload becomes a
 /// `PlaybackState` — including the same milliseconds trap ADR-0002 records
 /// for the scripting bridge.
-@Suite("Spotify notification payload")
-struct SpotifyNotificationPayloadTests {
+@Suite("Player notification payload")
+struct PlayerNotificationPayloadTests {
     private func payload(
         playerState: Any = "Playing",
         trackID: Any = "spotify:track:2X485T9Z5Ly0xyaghN73ed",
@@ -31,7 +31,7 @@ struct SpotifyNotificationPayloadTests {
 
     @Test("a playing payload parses into every field")
     func playing() throws {
-        let state = try SpotifyNotificationPayload.parse(payload())
+        let state = try PlayerNotificationPayload.parse(payload())
 
         #expect(state.isPlaying)
         let track = try #require(state.track)
@@ -46,7 +46,7 @@ struct SpotifyNotificationPayloadTests {
     /// milliseconds, while `Playback Position` really is seconds.
     @Test("duration is milliseconds and is converted to seconds")
     func durationIsMilliseconds() throws {
-        let state = try SpotifyNotificationPayload.parse(
+        let state = try PlayerNotificationPayload.parse(
             payload(durationMilliseconds: 467586)
         )
 
@@ -56,7 +56,7 @@ struct SpotifyNotificationPayloadTests {
 
     @Test("a paused payload keeps its position")
     func paused() throws {
-        let state = try SpotifyNotificationPayload.parse(payload(playerState: "Paused"))
+        let state = try PlayerNotificationPayload.parse(payload(playerState: "Paused"))
 
         #expect(state.isPlaying == false)
         #expect(state.track != nil)
@@ -67,7 +67,7 @@ struct SpotifyNotificationPayloadTests {
     /// stops and when the app quits. It must parse without them.
     @Test("a stopped payload has no track and needs no track fields")
     func stopped() throws {
-        let state = try SpotifyNotificationPayload.parse(["Player State": "Stopped"])
+        let state = try PlayerNotificationPayload.parse(["Player State": "Stopped"])
 
         #expect(state == .stopped)
     }
@@ -77,8 +77,8 @@ struct SpotifyNotificationPayloadTests {
         var incomplete = payload()
         incomplete.removeValue(forKey: "Artist")
 
-        #expect(throws: SpotifyNotificationPayload.ParseError.missingKey("Artist")) {
-            try SpotifyNotificationPayload.parse(incomplete)
+        #expect(throws: PlayerNotificationPayload.ParseError.missingKey("Artist")) {
+            try PlayerNotificationPayload.parse(incomplete)
         }
     }
 
@@ -86,11 +86,11 @@ struct SpotifyNotificationPayloadTests {
     /// one; the error must say which happened.
     @Test("a wrong-typed field is reported as invalid, not missing")
     func wrongType() {
-        #expect(throws: SpotifyNotificationPayload.ParseError.invalidValue(key: "Name")) {
-            try SpotifyNotificationPayload.parse(payload(name: 42))
+        #expect(throws: PlayerNotificationPayload.ParseError.invalidValue(key: "Name")) {
+            try PlayerNotificationPayload.parse(payload(name: 42))
         }
-        #expect(throws: SpotifyNotificationPayload.ParseError.invalidValue(key: "Duration")) {
-            try SpotifyNotificationPayload.parse(payload(durationMilliseconds: "soon"))
+        #expect(throws: PlayerNotificationPayload.ParseError.invalidValue(key: "Duration")) {
+            try PlayerNotificationPayload.parse(payload(durationMilliseconds: "soon"))
         }
     }
 
@@ -98,8 +98,8 @@ struct SpotifyNotificationPayloadTests {
     /// position must never be anchored into the clock.
     @Test("a non-finite number is rejected")
     func nonFiniteNumber() {
-        #expect(throws: SpotifyNotificationPayload.ParseError.invalidValue(key: "Playback Position")) {
-            try SpotifyNotificationPayload.parse(payload(positionSeconds: Double.nan))
+        #expect(throws: PlayerNotificationPayload.ParseError.invalidValue(key: "Playback Position")) {
+            try PlayerNotificationPayload.parse(payload(positionSeconds: Double.nan))
         }
     }
 
@@ -107,15 +107,15 @@ struct SpotifyNotificationPayloadTests {
     /// one-millisecond duration rather than a wrong type.
     @Test("a boolean is not a number")
     func booleanIsNotANumber() {
-        #expect(throws: SpotifyNotificationPayload.ParseError.invalidValue(key: "Duration")) {
-            try SpotifyNotificationPayload.parse(payload(durationMilliseconds: true))
+        #expect(throws: PlayerNotificationPayload.ParseError.invalidValue(key: "Duration")) {
+            try PlayerNotificationPayload.parse(payload(durationMilliseconds: true))
         }
     }
 
     @Test("an unknown player state is rejected")
     func unknownPlayerState() {
-        #expect(throws: SpotifyNotificationPayload.ParseError.unknownPlayerState("Buffering")) {
-            try SpotifyNotificationPayload.parse(payload(playerState: "Buffering"))
+        #expect(throws: PlayerNotificationPayload.ParseError.unknownPlayerState("Buffering")) {
+            try PlayerNotificationPayload.parse(payload(playerState: "Buffering"))
         }
     }
 }

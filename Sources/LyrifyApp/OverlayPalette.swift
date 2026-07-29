@@ -33,7 +33,14 @@ enum OverlayPalette {
     /// text on black but disappears into album art — these sit over the artwork
     /// itself and have to hold up against a light cover.
     static let glyphRest = NSColor(srgbRed: 0.92, green: 0.92, blue: 0.92, alpha: 1)
-    static let accent = NSColor(srgbRed: 0.118, green: 0.843, blue: 0.376, alpha: 1)
+    /// Anything switched on. Lyrify's amber, not Spotify's `#1ED760`: the
+    /// Overlay stopped being a look-alike, and shipping another company's brand
+    /// colour inside a third-party app is a risk with nothing to gain.
+    ///
+    /// The brighter of the brand's two ambers. The darker one is tuned for the
+    /// site's cream ground and goes muddy against this card's black, where the
+    /// entire job of this colour is to read as "on" at a glance.
+    static let accent = NSColor(srgbRed: 0.902, green: 0.639, blue: 0.224, alpha: 1)
 
     /// The unfilled part of a progress or volume bar — white at 30%, exactly
     /// what Spotify draws behind its own.

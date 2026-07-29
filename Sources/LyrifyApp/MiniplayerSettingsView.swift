@@ -1,8 +1,8 @@
 import AppKit
 
-/// The panel behind the chrome bar's sliders button, matching the one Spotify's
-/// miniplayer shows: a heading, the switches, and a green "Done" pill, drawn over
-/// the card rather than in a menu.
+/// The panel behind the chrome bar's sliders button, shaped after the one
+/// Spotify's miniplayer shows: a heading, the switches, and an amber "Done"
+/// pill, drawn over the card rather than in a menu.
 ///
 /// Spotify offers two switches, "Background color" and "Queue". Only the first
 /// has any meaning here — Lyrify shows one Track, never a queue — so only the
@@ -71,9 +71,10 @@ final class MiniplayerSettingsView: NSView {
     }
 }
 
-/// Spotify's pill switch: grey when off, green when on, with a white knob that
-/// slides across. `NSSwitch` draws the system's blue one, which would be the only
-/// control on the card not wearing Spotify's colours.
+/// A pill switch: grey when off, accent when on, with a white knob that slides
+/// across. Shaped after Spotify's, but `NSSwitch` draws the system's blue one,
+/// which would leave it the only control on the card not wearing the Overlay's
+/// own colours.
 final class ToggleSwitch: NSControl {
     var onToggled: ((Bool) -> Void)?
 
@@ -144,7 +145,7 @@ final class ToggleSwitch: NSControl {
     }
 }
 
-/// The green pill that closes the settings panel.
+/// The amber pill that closes the settings panel.
 private final class DoneButton: NSButton {
     init(target: AnyObject?, action: Selector) {
         super.init(frame: .zero)

@@ -1,9 +1,12 @@
 import AppKit
 
-/// A control in the miniplayer's transport row, with Spotify's own hover
-/// behaviour: the secondary buttons sit subdued and brighten to white under the
-/// pointer, the play button is a white disc that swells slightly, and the
-/// shuffle and repeat toggles turn green while they are on.
+/// A control in the miniplayer's transport row: the secondary buttons sit
+/// subdued and brighten to white under the pointer, the play button is a white
+/// disc that swells slightly, and the shuffle and repeat toggles take the
+/// accent while they are on.
+///
+/// The hover behaviour was read off Spotify's miniplayer and still matches it.
+/// The colour no longer does — anything switched on wears Lyrify's amber.
 ///
 /// AppKit gives `NSButton` no hover state at all, so each button carries its own
 /// tracking area and repaints itself — the same reason `OverlayProgressBar`
@@ -16,11 +19,11 @@ final class MiniplayerButton: NSButton {
         case secondary
         /// Play-pause: a white disc with a black glyph.
         case primary
-        /// Shuffle / repeat: subdued, green while on.
+        /// Shuffle / repeat: subdued, accent while on.
         case toggle
     }
 
-    /// Only meaningful for `.toggle`; lights the button green while true.
+    /// Only meaningful for `.toggle`; lights the button in the accent while true.
     var isOn = false {
         didSet { refreshAppearance() }
     }

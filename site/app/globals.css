@@ -3,12 +3,42 @@
 /* ---------------------------------------------------------------------------
    Palette
 
-   Held as plain custom properties rather than straight in `@theme` because the
-   values swap at runtime — by OS preference, or by a `data-theme` attribute
-   that overrides it. `@theme inline` below points Tailwind's colour utilities
-   at these, so `bg-surface` resolves through the variable and follows the
-   theme instead of being frozen at build time.
+   One palette, deliberately: the cream ground is served to everyone, whatever
+   their OS is set to. The dark theme it replaced is kept immediately below in
+   comment form rather than only in git history, so going back is an
+   uncomment rather than an archaeology exercise.
+
+   Still held as custom properties rather than declared straight in `@theme`,
+   even though nothing swaps them any more — `@theme inline` below resolves
+   Tailwind's colour utilities through these variables, which is what keeps
+   that revert down to uncommenting a block instead of rewriting every
+   utility.
 --------------------------------------------------------------------------- */
+
+:root {
+  --bg: #f2ece0;
+  --surface: #e9e0cd;
+  --surface-2: #ded2b7;
+  --text: #201c15;
+  --text-dim: #6b6250;
+  --accent: #a86419;
+  --accent-ink: #fdf6e8;
+  --border: rgba(32, 28, 21, 0.14);
+  --shadow-tint: rgba(32, 28, 21, 0.12);
+}
+
+/* ---------------------------------------------------------------------------
+   The retired dark theme — uncomment this whole block to restore it.
+
+   It was the default, with cream served only under `prefers-color-scheme:
+   light`. The `:not([data-theme="dark"])` guard is what stopped the media
+   query and the attribute fighting: without it the later rule won by source
+   order rather than by intent.
+
+   Restoring it needs both halves — the `:root` values *and* the two
+   `data-theme` rules — plus `themeColor` in `lib/site.ts` widening back into a
+   dark/light pair, and the root layout's viewport export with it. Half of this
+   uncommented gives a page that can enter a theme it cannot leave.
 
 :root {
   --bg: #10201b;
@@ -22,9 +52,6 @@
   --shadow-tint: rgba(0, 0, 0, 0.35);
 }
 
-/* `:not([data-theme="dark"])` so an explicit dark choice still wins on a
-   light-set OS. Without it the media query and the attribute fight, and the
-   later rule wins by source order rather than by intent. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --bg: #f2ece0;
@@ -50,6 +77,8 @@
   --border: rgba(32, 28, 21, 0.14);
   --shadow-tint: rgba(32, 28, 21, 0.12);
 }
+
+--------------------------------------------------------------------------- */
 
 @theme inline {
   --color-bg: var(--bg);

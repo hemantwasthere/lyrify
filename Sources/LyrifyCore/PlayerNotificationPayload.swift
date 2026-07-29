@@ -3,10 +3,13 @@ import Foundation
 /// Turns the user-info dictionary of Spotify's broadcast playback-state
 /// notification into a `PlaybackState`.
 ///
+/// Spotify is the only player this parses for today — the notification name and
+/// every key below are Spotify's. The generic name describes the role.
+///
 /// Kept free of AppKit so the parsing — including the milliseconds conversion
 /// that ADR-0002 warns about — is testable without Spotify running. Malformed
 /// payloads are errors, never guesses.
-public enum SpotifyNotificationPayload {
+public enum PlayerNotificationPayload {
     /// The distributed notification Spotify posts on every state change.
     public static let notificationName = Notification.Name("com.spotify.client.PlaybackStateChanged")
 

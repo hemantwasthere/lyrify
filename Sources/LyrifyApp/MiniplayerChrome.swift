@@ -46,6 +46,17 @@ final class CloseDotButton: NSButton {
         trackingArea = area
     }
 
+    /// Invisible to clicks while faded out, matching the volume popover.
+    ///
+    /// This matters more in the band than it looks. The band's rail no longer
+    /// reserves its width, so at rest this dot sits over the album art rather
+    /// than in a gutter of its own — and AppKit hit-tests a fully transparent
+    /// view like any other. Without this, grabbing the cover to drag the
+    /// Overlay could collapse it to the Disc instead.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        alphaValue < 0.1 ? nil : super.hitTest(point)
+    }
+
     override func mouseEntered(with event: NSEvent) {
         isHovering = true
         needsDisplay = true
@@ -120,7 +131,7 @@ final class DragDotsView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
-        SpotifyPalette.glyphRest.setFill()
+        OverlayPalette.glyphRest.setFill()
         for row in 0..<rows {
             for column in 0..<columns {
                 let origin = NSPoint(

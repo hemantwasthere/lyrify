@@ -5,18 +5,24 @@ import LyrifyCore
 /// Reads playback state from, and sends playback commands to, the Spotify
 /// desktop client over Apple Events.
 ///
+/// Named for the player rather than for Spotify because that is the role it
+/// fills, not because an abstraction exists: Spotify is the only player Lyrify
+/// speaks to today, and every script source and bundle identifier below names
+/// it directly. A second player would need real work here, not just a
+/// conforming type.
+///
 /// Two rules govern this type, both from ADR-0002:
 ///
 /// 1. Never script Spotify unless it is already running — scripting a closed
 ///    app *launches* it, and an overlay that starts Spotify at login would be a
 ///    genuinely bad bug.
-/// 2. All unit conversion happens in `SpotifyScriptOutput`, not here.
+/// 2. All unit conversion happens in `PlayerScriptOutput`, not here.
 ///
 /// ADR-0007 adds a third: Lyrify now sends commands, not just reads state,
 /// through this same Automation channel — no new permission prompt, but a
 /// bug here can change what's playing, not just misreport it.
 @MainActor
-final class SpotifyBridge: PlaybackSource {
+final class PlayerBridge: PlaybackSource {
     enum BridgeError: Error, Equatable {
         /// The user has not granted (or has revoked) Automation permission.
         case automationNotPermitted
@@ -26,7 +32,7 @@ final class SpotifyBridge: PlaybackSource {
     private static let spotifyBundleIdentifier = "com.spotify.client"
 
     /// Emits one delimited line, or the stopped marker when there is no current
-    /// track. Kept in sync with `SpotifyScriptOutput`.
+    /// track. Kept in sync with `PlayerScriptOutput`.
     private static let source = """
         tell application "Spotify"
             set d to (ASCII character 31)
@@ -94,7 +100,7 @@ final class SpotifyBridge: PlaybackSource {
         guard let output = try run(script)?.stringValue else {
             throw BridgeError.scriptFailed("Spotify returned no value")
         }
-        return try SpotifyScriptOutput.parse(output)
+        return try PlayerScriptOutput.parse(output)
     }
 
     /// The current Track's artwork URL, or nil when Spotify reports none —

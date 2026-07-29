@@ -6,9 +6,9 @@ import Testing
 /// The scripting bridge hands us one delimited line. These tests pin down how
 /// that line becomes a `PlaybackState`, including the units trap recorded in
 /// ADR-0002.
-@Suite("Spotify script output")
-struct SpotifyScriptOutputTests {
-    private let sep = SpotifyScriptOutput.fieldSeparator
+@Suite("Player script output")
+struct PlayerScriptOutputTests {
+    private let sep = PlayerScriptOutput.fieldSeparator
 
     private func line(
         state: String = "playing",
@@ -25,7 +25,7 @@ struct SpotifyScriptOutputTests {
 
     @Test("a playing track parses into every field")
     func playingTrack() throws {
-        let state = try SpotifyScriptOutput.parse(line())
+        let state = try PlayerScriptOutput.parse(line())
 
         #expect(state.isPlaying)
         let track = try #require(state.track)
@@ -41,7 +41,7 @@ struct SpotifyScriptOutputTests {
     /// every lyrics lookup, because matching is done on duration in seconds.
     @Test("duration is milliseconds and is converted to seconds")
     func durationIsMilliseconds() throws {
-        let state = try SpotifyScriptOutput.parse(line(durationMilliseconds: "467586"))
+        let state = try PlayerScriptOutput.parse(line(durationMilliseconds: "467586"))
 
         let track = try #require(state.track)
         #expect(abs(track.duration - 467.586) < 0.0005)
@@ -49,7 +49,7 @@ struct SpotifyScriptOutputTests {
 
     @Test("duration rounds to the whole second a lyrics lookup needs")
     func durationInWholeSeconds() throws {
-        let state = try SpotifyScriptOutput.parse(line(durationMilliseconds: "467586"))
+        let state = try PlayerScriptOutput.parse(line(durationMilliseconds: "467586"))
 
         let track = try #require(state.track)
         #expect(track.durationInWholeSeconds == 468)
@@ -57,7 +57,7 @@ struct SpotifyScriptOutputTests {
 
     @Test("a paused track keeps its position")
     func pausedTrack() throws {
-        let state = try SpotifyScriptOutput.parse(line(state: "paused"))
+        let state = try PlayerScriptOutput.parse(line(state: "paused"))
 
         #expect(state.isPlaying == false)
         #expect(state.track != nil)
@@ -66,7 +66,7 @@ struct SpotifyScriptOutputTests {
 
     @Test("a stopped player has no track")
     func stoppedPlayer() throws {
-        let state = try SpotifyScriptOutput.parse("stopped")
+        let state = try PlayerScriptOutput.parse("stopped")
 
         #expect(state == .stopped)
         #expect(state.track == nil)
@@ -75,7 +75,7 @@ struct SpotifyScriptOutputTests {
 
     @Test("track and artist names survive punctuation")
     func awkwardMetadata() throws {
-        let state = try SpotifyScriptOutput.parse(
+        let state = try PlayerScriptOutput.parse(
             line(name: "Say It Ain't So", artist: "Weezer | ünicode")
         )
 
@@ -86,8 +86,8 @@ struct SpotifyScriptOutputTests {
 
     @Test("an unknown player state is rejected")
     func unknownState() {
-        #expect(throws: SpotifyScriptOutput.ParseError.self) {
-            try SpotifyScriptOutput.parse(line(state: "buffering"))
+        #expect(throws: PlayerScriptOutput.ParseError.self) {
+            try PlayerScriptOutput.parse(line(state: "buffering"))
         }
     }
 
@@ -95,35 +95,35 @@ struct SpotifyScriptOutputTests {
     func truncatedRecord() {
         let truncated = ["playing", "spotify:track:abc", "Name"].joined(separator: sep)
 
-        #expect(throws: SpotifyScriptOutput.ParseError.self) {
-            try SpotifyScriptOutput.parse(truncated)
+        #expect(throws: PlayerScriptOutput.ParseError.self) {
+            try PlayerScriptOutput.parse(truncated)
         }
     }
 
     @Test("a non-numeric duration is rejected")
     func nonNumericDuration() {
-        #expect(throws: SpotifyScriptOutput.ParseError.self) {
-            try SpotifyScriptOutput.parse(line(durationMilliseconds: "unknown"))
+        #expect(throws: PlayerScriptOutput.ParseError.self) {
+            try PlayerScriptOutput.parse(line(durationMilliseconds: "unknown"))
         }
     }
 
     @Test("a non-numeric position is rejected")
     func nonNumericPosition() {
-        #expect(throws: SpotifyScriptOutput.ParseError.self) {
-            try SpotifyScriptOutput.parse(line(positionSeconds: ""))
+        #expect(throws: PlayerScriptOutput.ParseError.self) {
+            try PlayerScriptOutput.parse(line(positionSeconds: ""))
         }
     }
 
     @Test("empty output is rejected")
     func emptyOutput() {
-        #expect(throws: SpotifyScriptOutput.ParseError.self) {
-            try SpotifyScriptOutput.parse("   \n ")
+        #expect(throws: PlayerScriptOutput.ParseError.self) {
+            try PlayerScriptOutput.parse("   \n ")
         }
     }
 
     @Test("surrounding whitespace from the scripting bridge is tolerated")
     func trailingNewline() throws {
-        let state = try SpotifyScriptOutput.parse("\n" + line() + "\n")
+        let state = try PlayerScriptOutput.parse("\n" + line() + "\n")
 
         #expect(state.track?.name == "Let It Happen")
     }

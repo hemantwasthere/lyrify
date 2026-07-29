@@ -1,9 +1,12 @@
 import AppKit
 
-/// Spotify's progress bar, drawn rather than borrowed from AppKit: a thin fully
-/// rounded track with a filled portion, which on hover turns green and grows a
-/// circular knob at the fill's end. Used for both the seek bar and the volume
-/// bar, which behave identically in Spotify's own miniplayer.
+/// The Overlay's progress bar, drawn rather than borrowed from AppKit: a thin
+/// fully rounded track with a filled portion, which on hover takes the accent
+/// colour and grows a circular knob at the fill's end. Used for both the seek
+/// bar and the volume bar, which behave identically.
+///
+/// Modelled on Spotify's, but nothing here is Spotify's — it is a drawing leaf
+/// with no knowledge of any player, which is why it is named for the Overlay.
 ///
 /// `NSSlider` was the obvious thing to reach for and is the wrong shape
 /// entirely — it draws a macOS track and thumb that no amount of tinting turns
@@ -17,7 +20,7 @@ import AppKit
 /// listener's cursor.
 ///
 /// Deliberately untested — a drawing and event-handling leaf, verified by hand.
-final class SpotifyProgressBar: NSView {
+final class OverlayProgressBar: NSView {
     /// Continuous, while dragging — for live time labels.
     var onScrub: ((Double) -> Void)?
     /// Once, on release — the only point a real command is sent.
@@ -120,7 +123,7 @@ final class SpotifyProgressBar: NSView {
         let trackRect = NSRect(x: 0, y: barY, width: bounds.width, height: Self.barHeight)
         let radius = Self.barHeight / 2
 
-        SpotifyPalette.barTrack.setFill()
+        OverlayPalette.barTrack.setFill()
         NSBezierPath(roundedRect: trackRect, xRadius: radius, yRadius: radius).fill()
 
         let fillWidth = bounds.width * CGFloat(fraction)
@@ -129,7 +132,7 @@ final class SpotifyProgressBar: NSView {
             // Green while hovered or scrubbing, white at rest — Spotify's exact
             // affordance for "this bar is grabbable."
             let active = isHovering || isDragging
-            (active ? SpotifyPalette.green : SpotifyPalette.textPrimary).setFill()
+            (active ? OverlayPalette.accent : OverlayPalette.textPrimary).setFill()
             NSBezierPath(roundedRect: fillRect, xRadius: radius, yRadius: radius).fill()
         }
 

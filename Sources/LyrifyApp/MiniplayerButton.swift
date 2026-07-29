@@ -1,12 +1,15 @@
 import AppKit
 
-/// A control in the miniplayer's transport row, with Spotify's own hover
-/// behaviour: the secondary buttons sit subdued and brighten to white under the
-/// pointer, the play button is a white disc that swells slightly, and the
-/// shuffle and repeat toggles turn green while they are on.
+/// A control in the miniplayer's transport row: the secondary buttons sit
+/// subdued and brighten to white under the pointer, the play button is a white
+/// disc that swells slightly, and the shuffle and repeat toggles take the
+/// accent while they are on.
+///
+/// The hover behaviour was read off Spotify's miniplayer and still matches it.
+/// The colour no longer does — anything switched on wears Lyrify's amber.
 ///
 /// AppKit gives `NSButton` no hover state at all, so each button carries its own
-/// tracking area and repaints itself — the same reason `SpotifyProgressBar`
+/// tracking area and repaints itself — the same reason `OverlayProgressBar`
 /// draws itself rather than wrapping `NSSlider`.
 ///
 /// Deliberately untested — an event-handling and drawing leaf, verified by hand.
@@ -16,11 +19,11 @@ final class MiniplayerButton: NSButton {
         case secondary
         /// Play-pause: a white disc with a black glyph.
         case primary
-        /// Shuffle / repeat: subdued, green while on.
+        /// Shuffle / repeat: subdued, accent while on.
         case toggle
     }
 
-    /// Only meaningful for `.toggle`; lights the button green while true.
+    /// Only meaningful for `.toggle`; lights the button in the accent while true.
     var isOn = false {
         didSet { refreshAppearance() }
     }
@@ -125,11 +128,11 @@ final class MiniplayerButton: NSButton {
         case .primary:
             color = .black
         case .secondary:
-            color = isHovering ? SpotifyPalette.textPrimary : SpotifyPalette.glyphRest
+            color = isHovering ? OverlayPalette.textPrimary : OverlayPalette.glyphRest
         case .toggle:
             color = isOn
-                ? SpotifyPalette.green
-                : (isHovering ? SpotifyPalette.textPrimary : SpotifyPalette.glyphRest)
+                ? OverlayPalette.accent
+                : (isHovering ? OverlayPalette.textPrimary : OverlayPalette.glyphRest)
         }
 
         // Weight only really bites on the outline glyphs, where it goes into the

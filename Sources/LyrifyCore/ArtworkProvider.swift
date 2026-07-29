@@ -24,7 +24,7 @@ public enum ArtworkOutcome: Equatable, Sendable {
 /// in-flight-dedup, and miss-inclusive caching policy.
 ///
 /// The artwork URL itself is Spotify's to report, not this type's to guess;
-/// callers supply it (via a live `SpotifyBridge` read) so the actor's own
+/// callers supply it (via a live `PlayerBridge` read) so the actor's own
 /// job stays narrow: given a Track and the URL Spotify reported for it right
 /// now, answer what the artwork actually is.
 public actor ArtworkProvider {

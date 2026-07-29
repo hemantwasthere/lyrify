@@ -1,3 +1,4 @@
+import { DemoVideo } from "@/components/DemoVideo";
 import { DownloadSection } from "@/components/DownloadSection";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
@@ -13,6 +14,7 @@ export default function Home() {
       <Header />
       <div className="mx-auto max-w-[960px] px-[clamp(20px,5vw,48px)]">
         <Hero />
+        <DemoVideo />
         <LinerNotes />
         <HowItWorks />
         <DownloadSection />

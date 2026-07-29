@@ -1,31 +1,47 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
   <defs>
+    <!-- The glow inverts with everything else: brightest where the dark card
+         was lightest, so the disc still sits in a pool of light rather than on
+         a flat sheet. Kept shallow — a strong gradient on cream reads as a
+         stain rather than as depth. -->
     <radialGradient id="bgGlow" cx="24%" cy="30%" r="85%">
-      <stop offset="0%" stop-color="#1b2e26"/>
-      <stop offset="100%" stop-color="#0f1815"/>
+      <stop offset="0%" stop-color="#f7f1e4"/>
+      <stop offset="100%" stop-color="#e7ddc8"/>
     </radialGradient>
     <radialGradient id="discBody" cx="38%" cy="32%" r="75%">
-      <stop offset="0%" stop-color="#2a4236"/>
-      <stop offset="100%" stop-color="#10201b"/>
+      <stop offset="0%" stop-color="#f4ecdb"/>
+      <stop offset="100%" stop-color="#dbc9a6"/>
     </radialGradient>
   </defs>
 
   <rect x="0" y="0" width="1200" height="630" fill="url(#bgGlow)"/>
 
+  <!-- `logo-mark.svg` at 0.6 scale, filled rim and all. The mark cannot be a
+       thinner-rimmed variant here just because the card is large: it is the
+       same mark. -->
   <g transform="translate(195 315)">
-    <circle cx="0" cy="0" r="150" fill="url(#discBody)"/>
-    <circle cx="0" cy="0" r="150" fill="none" stroke="#3a5346" stroke-width="2"/>
-    <circle cx="0" cy="0" r="106" fill="none" stroke="#4a6357" stroke-width="6" opacity="0.55"/>
-    <circle cx="0" cy="0" r="106" fill="none" stroke="#e6a339" stroke-width="7"
-            stroke-dasharray="133 533" stroke-linecap="round"
+    <circle cx="0" cy="0" r="150" fill="#3d2f1a"/>
+    <circle cx="0" cy="0" r="132" fill="url(#discBody)"/>
+    <circle cx="0" cy="0" r="91" fill="none" stroke="#b09a70" stroke-width="7" opacity="0.8"/>
+    <circle cx="0" cy="0" r="91" fill="none" stroke="#a86419" stroke-width="11"
+            stroke-dasharray="114 460" stroke-linecap="round"
             transform="rotate(-90)"/>
-    <circle cx="101" cy="-33.6" r="6" fill="#e6a339"/>
-    <circle cx="0" cy="0" r="21" fill="#e6a339"/>
-    <circle cx="0" cy="0" r="6" fill="#10201b"/>
+    <circle cx="86.4" cy="-28.8" r="7" fill="#a86419"/>
+    <circle cx="0" cy="0" r="31" fill="#a86419"/>
+    <circle cx="0" cy="0" r="9" fill="#2b2216"/>
   </g>
 
-  <text x="415" y="270" font-family="Georgia, 'Iowan Old Style', serif" font-size="76" font-weight="600" fill="#ece4d3">Lyrify</text>
-  <text x="417" y="325" font-family="Georgia, 'Iowan Old Style', serif" font-size="34" fill="#c9c0ac">Lyrics that keep up</text>
-  <text x="417" y="368" font-family="Georgia, 'Iowan Old Style', serif" font-size="34" fill="#c9c0ac">with <tspan font-style="italic" fill="#e6a339">the music.</tspan></text>
-  <text x="417" y="425" font-family="ui-monospace, Menlo, monospace" font-size="21" letter-spacing="2" fill="#7d9285">MENU BAR APP FOR SPOTIFY · MACOS</text>
+  <!-- On the dark card the wordmark was the lightest thing present and the
+       tagline sat below it in a dimmed cream. Inverted, that ordering has to be
+       rebuilt from the dark end: the wordmark takes the site's ink, the tagline
+       a lifted brown that still clears AA at this size, and the eyebrow the
+       site's own dimmed text so it recedes without becoming decoration. -->
+  <text x="415" y="270" font-family="Georgia, 'Iowan Old Style', serif" font-size="76" font-weight="600" fill="#201c15">Lyrify</text>
+  <text x="417" y="325" font-family="Georgia, 'Iowan Old Style', serif" font-size="34" fill="#544b3c">Lyrics that keep up</text>
+  <text x="417" y="368" font-family="Georgia, 'Iowan Old Style', serif" font-size="34" fill="#544b3c">with <tspan font-style="italic" fill="#a86419">the music.</tspan></text>
+  <!-- A shade darker than the site's dimmed text. At 21px this is normal-size
+       text, so it owes 4.5:1, and the site's own value lands at 4.47 against
+       the gradient's darker end — fine on the page, where the ground is flat
+       and lighter, short of it here. -->
+  <text x="417" y="425" font-family="ui-monospace, Menlo, monospace" font-size="21" letter-spacing="2" fill="#665d4b">MENU BAR APP FOR SPOTIFY · MACOS</text>
 </svg>

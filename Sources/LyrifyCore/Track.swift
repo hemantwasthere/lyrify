@@ -15,7 +15,7 @@ public struct Track: Equatable, Sendable {
     ///
     /// Spotify's scripting definition reports this in milliseconds despite
     /// declaring seconds; the conversion happens once, at the boundary, in
-    /// `SpotifyScriptOutput`. See ADR-0002.
+    /// `PlayerScriptOutput`. See ADR-0002.
     public let duration: TimeInterval
 
     public init(

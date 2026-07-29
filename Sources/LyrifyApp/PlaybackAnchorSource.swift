@@ -9,10 +9,10 @@ import LyrifyCore
 /// there is one playback truth, not one per subscriber.
 @MainActor
 final class PlaybackAnchorSource {
-    private let bridge: SpotifyBridge
+    private let bridge: PlayerBridge
     private var clock = PlaybackClock()
     private var timer: Timer?
-    private var notificationObserver: SpotifyNotificationObserver?
+    private var notificationObserver: PlayerNotificationObserver?
     private var handlers: [(PlaybackState) -> Void] = []
 
     /// The re-anchor cadence. This knob bounds two worst cases at once: how
@@ -23,7 +23,7 @@ final class PlaybackAnchorSource {
     /// demands a tighter Drift bound.
     private static let reAnchorInterval: TimeInterval = 10.0
 
-    init(bridge: SpotifyBridge) {
+    init(bridge: PlayerBridge) {
         self.bridge = bridge
     }
 
@@ -57,7 +57,7 @@ final class PlaybackAnchorSource {
         RunLoop.current.add(reAnchorTimer, forMode: .common)
         timer = reAnchorTimer
 
-        notificationObserver = SpotifyNotificationObserver { [weak self] observed in
+        notificationObserver = PlayerNotificationObserver { [weak self] observed in
             self?.anchor(observed)
         }
     }

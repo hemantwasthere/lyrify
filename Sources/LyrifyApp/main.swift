@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // bridge per subscriber (same reasoning as `PlaybackAnchorSource`'s
         // own doc comment), and it keeps `isAutomationPermitted` consistent
         // across both.
-        let bridge = SpotifyBridge()
+        let bridge = PlayerBridge()
         let anchorSource = PlaybackAnchorSource(bridge: bridge)
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
         let artworkProvider = ArtworkProvider(transport: URLSessionLyricsTransport())

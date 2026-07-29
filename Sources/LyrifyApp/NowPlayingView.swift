@@ -53,6 +53,19 @@ final class NowPlayingView: DraggableBackgroundView {
     /// bar's controls fade into.
     private static let chromeHeight: CGFloat = 28
 
+    /// How far the band's artwork sits from the leading edge with the pointer
+    /// away, and with it present.
+    ///
+    /// The band's rail — the close dot above the drag dots — used to hold the
+    /// wider of these permanently, even though both controls are fully
+    /// transparent until pointed at. That left an unexplained empty gutter
+    /// before the album art on a widget whose whole point is being small. The
+    /// space is opened on hover instead, which is the same bargain the chrome
+    /// bar strikes in portrait.
+    private static let bandArtInsetAtRest: CGFloat = 6
+    /// 8 to the close dot, its own 12, then 10 of air before the art.
+    private static let bandArtInsetWhenRevealed: CGFloat = 30
+
     var onTogglePlayPause: (() -> Void)?
     var onSkipToNext: (() -> Void)?
     var onSkipToPrevious: (() -> Void)?
@@ -107,6 +120,7 @@ final class NowPlayingView: DraggableBackgroundView {
     private var portraitConstraints: [NSLayoutConstraint] = []
     private var bandConstraints: [NSLayoutConstraint] = []
     private var chromeSlide: NSLayoutConstraint!
+    private var railSlide: NSLayoutConstraint!
     private var artTop: NSLayoutConstraint!
     private var isBand = false
     private var isHovering = false
@@ -207,6 +221,14 @@ final class NowPlayingView: DraggableBackgroundView {
             // which is the whole of Spotify's animation; sliding a black panel
             // down over black was only ever invisible work.
             self.chromeSlide.animator().constant = revealed ? 0 : -8
+            // The band has nothing to hide its rail behind — the art is barely
+            // larger than the rail itself — so rather than fading controls onto
+            // the cover it makes room for them and gives it back. Only the art
+            // and the title move; the transport is anchored to the trailing
+            // edge, so the title loses this width while the pointer is present.
+            self.railSlide.animator().constant = revealed
+                ? Self.bandArtInsetWhenRevealed
+                : Self.bandArtInsetAtRest
             self.chromeBackdrop.animator().alphaValue = revealed ? 1 : 0
             self.closeButton.animator().alphaValue = revealed ? 1 : 0
             self.dotsHorizontal.animator().alphaValue = revealed ? 1 : 0
@@ -745,6 +767,24 @@ final class NowPlayingView: DraggableBackgroundView {
         infoStack.alignment = .leading
         infoStack.spacing = 0
         infoStack.translatesAutoresizingMaskIntoConstraints = false
+        // Hug the two labels harder than the default 250, or a tall card breaks.
+        //
+        // Portrait chains the plate's top edge through the art panel, this
+        // stack, and back to the plate's bottom. Two of those can stretch, so
+        // one of them has to be the one that yields. The panel looks like the
+        // obvious candidate — it has no intrinsic height at all — but the low
+        // priority `grow` constraints in `buildArtPanel` are equalities, and
+        // combined with the required square cover and its width cap they pull
+        // the panel's height toward roughly 1.18x its width. At the default 250
+        // that pull ties with this stack's hugging, and the solver broke the tie
+        // the wrong way: past that height the stack absorbed every extra point,
+        // packed its labels at the top, and left a growing slab of dead card
+        // below them — with the lyrics button, which centres on this stack,
+        // drifting further from the title it belongs beside.
+        //
+        // Raising this above the pull settles the tie for good. Nothing changes
+        // at the default size, where the pull is not binding.
+        infoStack.setHuggingPriority(.defaultHigh, for: .vertical)
         infoStack.addArrangedSubview(titleLabel)
         infoStack.addArrangedSubview(artistLabel)
         plate.addSubview(infoStack)
@@ -763,6 +803,13 @@ final class NowPlayingView: DraggableBackgroundView {
         // open above the artwork; the curve under the bar comes from clipping,
         // not from moving this edge down. See `refreshPanelMask`.
         artTop = artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: pm)
+        // Starts closed. `refreshRevealedControls` opens it when the pointer
+        // arrives, and `applyLayoutMode` calls that unanimated on every switch,
+        // so entering the band with the pointer already inside still makes room.
+        railSlide = artPanel.leadingAnchor.constraint(
+            equalTo: plate.leadingAnchor,
+            constant: Self.bandArtInsetAtRest
+        )
 
         portraitConstraints = [
             closeButton.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: 10),
@@ -804,7 +851,10 @@ final class NowPlayingView: DraggableBackgroundView {
             dotsVertical.centerXAnchor.constraint(equalTo: closeButton.centerXAnchor),
             dotsVertical.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
 
-            artPanel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 10),
+            // Anchored to the plate rather than to the close dot, so the rail's
+            // width is something this constant grants on hover rather than
+            // something the layout owes it permanently. See `railSlide`.
+            railSlide,
             artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: 6),
             artPanel.bottomAnchor.constraint(equalTo: plate.bottomAnchor, constant: -6),
             artPanel.widthAnchor.constraint(equalTo: artPanel.heightAnchor),

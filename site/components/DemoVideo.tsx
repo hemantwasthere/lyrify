@@ -54,17 +54,16 @@ export function DemoVideo() {
       <div className="rounded-[20px] border border-border bg-surface p-[clamp(10px,1.6vw,16px)] shadow-card">
         {/* The ratio is held by the element itself rather than by a wrapper, so
             the space is reserved from first paint and nothing shifts under the
-            reader when the video's own dimensions arrive.
+            reader when the video's own dimensions arrive. It matches the
+            recording exactly — 1280x720 — so there is no matting to see.
 
-            `contain`, not `cover`. 16/10 is a placeholder until the real
-            recording exists, and `cover` would crop whatever does not match it
-            — on a UI demo that means quietly slicing the edge off the very
-            widget the section is here to show. Contain shows all of it and mats
-            the remainder in the card's own cream. Once the recording lands,
-            setting this ratio to its true one removes the matting entirely. */}
+            `contain` rather than `cover` even so: if the recording is ever
+            replaced at a different shape, this shows all of the new one instead
+            of quietly slicing the edge off the widget the section exists to
+            show. The failure mode is visible bars, which is the one you want. */}
         <video
           ref={videoRef}
-          className="aspect-[16/10] w-full rounded-[12px] bg-bg object-contain"
+          className="aspect-[16/9] w-full rounded-[12px] bg-bg object-contain"
           src="/lyrify-demo.mp4"
           muted
           loop

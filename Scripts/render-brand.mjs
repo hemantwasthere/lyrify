@@ -67,6 +67,15 @@ for (const [relative, size] of rasters) {
   console.log(`${String(size).padStart(4)}px  ${relative}`);
 }
 
+// The social card is its own drawing rather than the icon at another size — it
+// is a composition, with the mark in it at 0.6 scale. Rendered here anyway, so
+// no brand raster in the repo is ever produced by hand.
+await sharp(join(root, "Resources/Brand/og-image.svg"), { density: 192 })
+  .resize(1200, 630)
+  .png()
+  .toFile(join(root, "site/public/og-image.png"));
+console.log("1200x630  site/public/og-image.png");
+
 const staging = mkdtempSync(join(tmpdir(), "lyrify-icons-"));
 const iconsetDir = join(staging, "Lyrify.iconset");
 mkdirSync(iconsetDir);

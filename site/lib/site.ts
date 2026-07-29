@@ -22,8 +22,9 @@ export const site = {
   },
 } as const;
 
-/** The two palettes, as the browser chrome sees them. */
-export const themeColors = {
-  dark: "#10201b",
-  light: "#f2ece0",
-} as const;
+/**
+ * The palette's ground, as the browser chrome sees it. Singular because the
+ * site serves one theme — restoring the dark one means putting the pair back
+ * here alongside uncommenting the block in `globals.css`.
+ */
+export const themeColor = "#f2ece0";

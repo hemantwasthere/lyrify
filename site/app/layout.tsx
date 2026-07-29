@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 
-import { site, themeColors } from "@/lib/site";
+import { site, themeColor } from "@/lib/site";
 import "./globals.css";
 
 /**
@@ -71,15 +71,11 @@ export const metadata: Metadata = {
 };
 
 /**
- * The static page pinned the browser chrome to the dark palette even when the
- * page itself rendered light, so the address bar clashed with the background.
+ * One colour, unconditionally — the page renders cream whatever the OS is set
+ * to, so a media-matched pair would only ever describe a theme that no longer
+ * exists and paint the address bar a colour found nowhere on the page.
  */
-export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: themeColors.dark },
-    { media: "(prefers-color-scheme: light)", color: themeColors.light },
-  ],
-};
+export const viewport: Viewport = { themeColor };
 
 export default function RootLayout({
   children,

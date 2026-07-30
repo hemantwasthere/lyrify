@@ -1,6 +1,6 @@
 /** Identity and copy that more than one file needs to agree on. */
 export const site = {
-  url: "https://lyrify.hemant.lol",
+  url: "https://lyrify.dev",
   name: "Lyrify",
   title: "Lyrify — lyrics that keep up with the music",
   /**

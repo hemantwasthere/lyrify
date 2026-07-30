@@ -13,12 +13,12 @@ desktop and every fullscreen window.
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-201c15?style=flat-square)](https://www.apple.com/macos/)
 [![Swift 6](https://img.shields.io/badge/Swift-6-a86419?style=flat-square)](https://swift.org)
 [![Apple Silicon & Intel](https://img.shields.io/badge/Apple%20Silicon%20%26%20Intel-universal-201c15?style=flat-square)](#install)
-[![lyrify.hemant.lol](https://img.shields.io/badge/lyrify.hemant.lol-a86419?style=flat-square)](https://lyrify.hemant.lol)
+[![lyrify.dev](https://img.shields.io/badge/lyrify.dev-a86419?style=flat-square)](https://lyrify.dev)
 
 <img src=".github/demo.gif" width="680" alt="The Lyrify overlay following a song line by line, the current lyric highlighted as it is sung">
 
 [**Download**](https://github.com/hemantwasthere/lyrify/releases/latest) ·
-[Website](https://lyrify.hemant.lol) ·
+[Website](https://lyrify.dev) ·
 [Report a bug](https://github.com/hemantwasthere/lyrify/issues/new)
 
 </div>
@@ -102,7 +102,7 @@ Point at the overlay and its furniture fades in: the close dot, drag dots, and
 settings. Drag from anywhere on the card to move it; grab any edge or corner to
 resize. The **speech-bubble button** swaps the artwork for lyrics, and the
 **sliders button** opens settings, where *Background color* controls whether the
-panel takes its tint from the album art.
+whole card — panel, chrome bar and all — takes its colour from the album art.
 
 The close dot quits Lyrify, the way a red dot does everywhere else on the system.
 To put the overlay away and keep it running, use **Show Overlay** in the menu bar.
@@ -114,7 +114,7 @@ git clone https://github.com/hemantwasthere/lyrify.git
 cd lyrify
 
 swift build                 # compile
-swift test                  # 101 tests across 13 suites
+swift test                  # 109 tests across 14 suites
 bash Scripts/build-app.sh   # assemble .build/Lyrify.app
 ```
 

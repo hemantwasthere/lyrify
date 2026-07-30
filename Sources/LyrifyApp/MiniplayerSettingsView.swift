@@ -122,9 +122,36 @@ final class ToggleSwitch: NSControl {
         fatalError("init(coder:) has not been implemented")
     }
 
+    /// The Overlay is a non-activating panel and never becomes key, so every
+    /// click into it is a *first* mouse, which AppKit drops unless the view asks
+    /// for it. `NSButton` asks by default; a bare `NSControl` does not.
+    ///
+    /// This alone was not what stopped the switch working — see
+    /// `OverlayInteractive`, which is what actually discarded the clicks — but it
+    /// is needed just the same, and would have been the next thing in the way.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func mouseDown(with event: NSEvent) {
+        flip()
+    }
+
+    private func flip() {
         isOn.toggle()
         onToggled?(isOn)
+    }
+
+    // Drawn from scratch, so none of this comes for free the way it would from an
+    // `NSSwitch`: without it the switch is not in the accessibility tree at all —
+    // no role, no label, nothing to press. VoiceOver cannot reach it, and neither
+    // can a script driving the app to check that it works.
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .checkBox }
+    override func accessibilityLabel() -> String? { "Background color" }
+    override func accessibilityValue() -> Any? { isOn }
+
+    override func accessibilityPerformPress() -> Bool {
+        flip()
+        return true
     }
 
     private func animateKnob() {

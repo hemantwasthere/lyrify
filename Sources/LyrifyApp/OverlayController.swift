@@ -120,9 +120,14 @@ final class OverlayController {
 
         discView.onClick = { [weak self] in self?.expand() }
         // The card deliberately has no `onClick`: clicking it used to collapse
-        // back to the Disc, which fought with resizing it. The chrome bar's red
-        // dot is now the only way back.
-        nowPlayingView.onClose = { [weak self] in self?.collapse() }
+        // back to the Disc, which fought with resizing it.
+        //
+        // The red dot quits. It minimized to the Disc before, which is not what
+        // a red traffic light means anywhere else on the system — it closes, and
+        // for a single-window agent with nothing left behind it, closing is
+        // quitting. "Minimize to Disc" moved to the status item's menu, next to
+        // "Show Overlay", where the other two window-state commands already live.
+        nowPlayingView.onClose = { NSApp.terminate(nil) }
         nowPlayingView.onShare = { [weak self] in self?.copyTrackLink() }
         nowPlayingView.onBackgroundColorChanged = { [weak self] isOn in
             guard let self else { return }
@@ -251,7 +256,9 @@ final class OverlayController {
         }
     }
 
-    private func collapse() {
+    /// Shrinks the card back to the Disc. Called by the status item's
+    /// "Minimize to Disc", which is the only route in now that the red dot quits.
+    func collapseToDisc() {
         guard expansionPreference.isExpanded else { return }
         expansionPreference.isExpanded = false
         window.setResizable(false)

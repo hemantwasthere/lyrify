@@ -48,8 +48,35 @@ public actor LyricsProvider {
     /// than missing ones (ADR-0003).
     public static let durationTolerance: TimeInterval = 2
 
-    public init(transport: any LyricsTransport) {
+    /// How long to wait before each retry of a lookup that came back
+    /// `unavailable`, and so how many retries there are.
+    ///
+    /// LRCLIB is a free community service and it does fall over — measured on
+    /// 2026-07-31, consecutive requests returned 504, 504, then 200, and the day
+    /// before it was 408s that took ten seconds each to arrive. One attempt per
+    /// Track meant a single unlucky request cost the listener lyrics for the
+    /// whole song, on a Track that plainly had them, with nothing on screen to
+    /// say why. Backing off and asking again turns an outage that long into a
+    /// pause rather than a silence.
+    ///
+    /// The delays lengthen so a service that is genuinely down is not hammered:
+    /// four attempts spread over 19 seconds, then it gives up until the Track
+    /// comes round again.
+    public static let defaultRetryDelays: [Duration] = [.seconds(2), .seconds(5), .seconds(12)]
+
+    private let retryDelays: [Duration]
+
+    /// Injected so tests can run the retry path without waiting on a clock.
+    private let sleep: @Sendable (Duration) async -> Void
+
+    public init(
+        transport: any LyricsTransport,
+        retryDelays: [Duration] = LyricsProvider.defaultRetryDelays,
+        sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
+    ) {
         self.transport = transport
+        self.retryDelays = retryDelays
+        self.sleep = sleep
     }
 
     /// What is known about the Track's lyrics — answered from memory when a
@@ -58,13 +85,35 @@ public actor LyricsProvider {
         if let known = remembered[track.uri] { return known }
         if let pending = inFlight[track.uri] { return await pending.value }
 
-        let flight = Task { await fetchOutcome(for: track) }
+        let flight = Task { await fetchWithRetries(for: track) }
         inFlight[track.uri] = flight
         let outcome = await flight.value
         inFlight[track.uri] = nil
 
         if outcome != .unavailable {
             remembered[track.uri] = outcome
+        }
+        return outcome
+    }
+
+    /// Runs the widening sequence, and runs it again after a pause for as long as
+    /// the answer is `unavailable`.
+    ///
+    /// Only unavailability is retried. A confirmed miss and found lyrics are both
+    /// answers about the Track, and asking twice would say the same thing while
+    /// costing a free service a second request; `unavailable` is the one outcome
+    /// that says nothing about the Track at all.
+    ///
+    /// The whole retry sequence lives inside the in-flight Task, so the menu bar
+    /// and the Overlay — which look up the same Track independently — wait on one
+    /// shared attempt rather than mounting their own.
+    private func fetchWithRetries(for track: Track) async -> LyricsOutcome {
+        var outcome = await fetchOutcome(for: track)
+
+        for delay in retryDelays where outcome == .unavailable {
+            await sleep(delay)
+            if Task.isCancelled { return outcome }
+            outcome = await fetchOutcome(for: track)
         }
         return outcome
     }

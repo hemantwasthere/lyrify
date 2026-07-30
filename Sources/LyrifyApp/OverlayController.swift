@@ -35,6 +35,10 @@ final class OverlayController {
     /// them.
     private var currentLyrics: [LyricLine]?
 
+    /// Why `currentLyrics` is nil, so the Idle State can say so. Reset with the
+    /// Track, since the reason belongs to the lookup that is about to run.
+    private var lyricsAvailability = OverlayDisplay.Availability.searching
+
     /// Whether the Expanded card is currently showing the Lyrics view
     /// rather than Now Playing. Resets to Now Playing every time the card
     /// expands — unlike position and expanded/collapsed state, this isn't
@@ -262,7 +266,15 @@ final class OverlayController {
         guard expansionPreference.isExpanded else { return }
         expansionPreference.isExpanded = false
         window.setResizable(false)
-        window.setContent(discView, animated: true)
+        // Says the size rather than reading it off the view. `setContent` falls
+        // back to `view.frame.size`, and the Disc's frame is not authoritative —
+        // it is whatever Auto Layout last left it, which is how the Disc came
+        // back 154pt across instead of 56.
+        window.setContent(
+            discView,
+            size: NSSize(width: DiscView.diameter, height: DiscView.diameter),
+            animated: true
+        )
     }
 
     /// Sets the card's resize bounds before turning resizing on — in that
@@ -335,15 +347,21 @@ final class OverlayController {
     /// A Non-Lyrical Item triggers no lookup at all, matching the menu bar's
     /// own rule.
     private func reconcileLyrics(for track: Track) {
-        guard track.isLyrical else { return }
+        guard track.isLyrical else {
+            lyricsAvailability = .noLyrics
+            return
+        }
 
         Task { [weak self] in
             guard let self else { return }
             let outcome = await self.lyricsProvider.lookup(for: track)
 
             guard self.currentTrackURI == track.uri else { return }
-            guard case .found(let lines) = outcome else { return }
-            self.currentLyrics = lines
+            switch outcome {
+            case .found(let lines): self.currentLyrics = lines
+            case .noSyncedLyrics: self.lyricsAvailability = .noLyrics
+            case .unavailable: self.lyricsAvailability = .serviceUnavailable
+            }
         }
     }
 
@@ -401,6 +419,7 @@ final class OverlayController {
         guard track.uri != currentTrackURI else { return }
         currentTrackURI = track.uri
         currentLyrics = nil
+        lyricsAvailability = .searching
 
         discView.updatePlaceholder()
         nowPlayingView.updatePlaceholder()
@@ -434,14 +453,19 @@ final class OverlayController {
     /// and seek slider, which is frequent enough that no line change is
     /// ever visibly late.
     private func refreshLyricsDisplay(_ state: PlaybackState) {
-        let answer = OverlayDisplay.resolve(isVisible: true, state: state, lyrics: currentLyrics)
+        let answer = OverlayDisplay.resolve(
+            isVisible: true,
+            state: state,
+            lyrics: currentLyrics,
+            availability: lyricsAvailability
+        )
 
         switch answer.content {
         case .hidden:
             nowPlayingView.updateLyrics(.nothingPlaying)
 
-        case .idle(let trackName):
-            nowPlayingView.updateLyrics(.idle(trackName: trackName))
+        case .idle(let trackName, let note):
+            nowPlayingView.updateLyrics(.idle(trackName: trackName, note: note))
 
         case .lines(.instrumentalGap):
             nowPlayingView.updateLyrics(.gap)

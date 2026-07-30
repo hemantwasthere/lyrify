@@ -20,7 +20,7 @@ final class CloseDotButton: NSButton {
         isBordered = false
         title = ""
         wantsLayer = true
-        toolTip = "Minimize to Disc"
+        toolTip = "Quit Lyrify"
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: 12),
@@ -48,11 +48,11 @@ final class CloseDotButton: NSButton {
 
     /// Invisible to clicks while faded out, matching the volume popover.
     ///
-    /// This matters more in the band than it looks. The band's rail no longer
-    /// reserves its width, so at rest this dot sits over the album art rather
-    /// than in a gutter of its own — and AppKit hit-tests a fully transparent
-    /// view like any other. Without this, grabbing the cover to drag the
-    /// Overlay could collapse it to the Disc instead.
+    /// This matters more in the band than it looks, and more than it did: the
+    /// band's rail no longer reserves its width, so at rest this dot sits over
+    /// the album art rather than in a gutter of its own — and AppKit hit-tests a
+    /// fully transparent view like any other. Without this, grabbing the cover to
+    /// drag the Overlay would quit Lyrify.
     override func hitTest(_ point: NSPoint) -> NSView? {
         alphaValue < 0.1 ? nil : super.hitTest(point)
     }

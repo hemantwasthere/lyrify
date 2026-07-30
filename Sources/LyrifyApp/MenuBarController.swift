@@ -1,31 +1,38 @@
 import AppKit
 import LyrifyCore
 
-/// The status item: names the current Track and indicates whether Synced
-/// Lyrics were found for it, alongside whatever the Overlay is showing.
+/// The status item: the mark, and a menu that says what Lyrify has found for
+/// the current Track.
 ///
-/// Subscribes to the shared `PlaybackAnchorSource` and renders on every
-/// Anchor. A Track change triggers one lyrics lookup, whose outcome fills the
-/// icon and names itself in the menu.
+/// The item is the icon and nothing else. It carried the Track name before, and
+/// a name — artist pair is wide: it pushed every other item along the menu bar,
+/// and moved them again on every song. The Overlay is where the Track is named,
+/// which is the whole point of it; the status item only has to say that Lyrify
+/// is running, and be somewhere to click.
+///
+/// Subscribes to the shared `PlaybackAnchorSource`. A Track change triggers one
+/// lyrics lookup, whose outcome names itself in the menu.
 @MainActor
 final class MenuBarController {
     private let statusItem: NSStatusItem
     private let lyricsProvider: LyricsProvider
-    private var lastTitle = ""
     private var outcomeItem: NSMenuItem?
 
     /// Owns the "Show Overlay" toggle. Held here because the menu item's
     /// `target` doesn't retain it.
     private var overlayVisibilityMenuController: OverlayVisibilityMenuController?
 
+    /// Held for the same reason.
+    private var minimizeTarget: MenuActionTarget?
+
     /// The Track URI the lookup outcome on display belongs to. A completed
     /// lookup is applied only if this still matches — a slow answer for an
     /// abandoned Track must never overwrite the current one.
     private var lookupURI: String?
 
-    /// What the indicator can say about the current Track's lyrics. A miss
-    /// and unavailability read differently on purpose: one is a database gap,
-    /// the other a network hiccup that will retry.
+    /// What the menu can say about the current Track's lyrics. A miss and
+    /// unavailability read differently on purpose: one is a database gap, the
+    /// other a network hiccup that will retry.
     private enum LookupOutcome {
         case nothingPlaying
         case nonLyrical
@@ -44,39 +51,43 @@ final class MenuBarController {
             case .unavailable: "Lyrics lookup unavailable"
             }
         }
-
-        var symbolName: String {
-            if case .found = self { "quote.bubble.fill" } else { "quote.bubble" }
-        }
     }
 
     init(
         anchorSource: PlaybackAnchorSource,
         lyricsProvider: LyricsProvider,
         overlayVisibility: OverlayVisibilityPreference,
-        onVisibilityChange: @escaping () -> Void
+        onVisibilityChange: @escaping () -> Void,
+        onMinimizeToDisc: @escaping () -> Void
     ) {
         self.lyricsProvider = lyricsProvider
-        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // Square rather than variable: the content is one fixed-width icon, and
+        // variable length would leave the item padded to whatever the last
+        // title measured.
+        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         configureButton()
-        buildMenu(overlayVisibility: overlayVisibility, onVisibilityChange: onVisibilityChange)
+        buildMenu(
+            overlayVisibility: overlayVisibility,
+            onVisibilityChange: onVisibilityChange,
+            onMinimizeToDisc: onMinimizeToDisc
+        )
         anchorSource.onAnchor { [weak self] state in
-            self?.render(state)
             self?.reconcileLookup(with: state)
         }
     }
 
     private func configureButton() {
         guard let button = statusItem.button else { return }
-        button.image = NSImage(
-            systemSymbolName: "quote.bubble",
-            accessibilityDescription: "Lyrify"
-        )
-        button.imagePosition = .imageLeading
+        button.image = MenuBarIcon.make()
+        button.imagePosition = .imageOnly
     }
 
-    private func buildMenu(overlayVisibility: OverlayVisibilityPreference, onVisibilityChange: @escaping () -> Void) {
+    private func buildMenu(
+        overlayVisibility: OverlayVisibilityPreference,
+        onVisibilityChange: @escaping () -> Void,
+        onMinimizeToDisc: @escaping () -> Void
+    ) {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -94,6 +105,16 @@ final class MenuBarController {
         self.overlayVisibilityMenuController = overlayVisibilityMenuController
         menu.addItem(overlayVisibilityMenuController.menuItem)
 
+        // The way back to the Disc. It used to be the Overlay's red dot, which
+        // now quits — and without somewhere else to put it the Disc would only
+        // ever be reachable on a first run, taking `DiscView` and its rotation
+        // down with it.
+        let minimizeTarget = MenuActionTarget(onMinimizeToDisc)
+        self.minimizeTarget = minimizeTarget
+        let minimize = NSMenuItem(title: "Minimize to Disc", action: #selector(MenuActionTarget.fire), keyEquivalent: "")
+        minimize.target = minimizeTarget
+        menu.addItem(minimize)
+
         menu.addItem(.separator())
         menu.addItem(
             withTitle: "Quit Lyrify",
@@ -101,16 +122,6 @@ final class MenuBarController {
             keyEquivalent: "q"
         )
         statusItem.menu = menu
-    }
-
-    /// Estimated position changes on every query, so deduplicate on the title
-    /// — the part of the state this surface actually shows.
-    private func render(_ state: PlaybackState) {
-        let title = MenuBarTitle.text(for: state).map { " " + $0 } ?? ""
-
-        guard title != lastTitle else { return }
-        lastTitle = title
-        statusItem.button?.title = title
     }
 
     /// One lookup per Track: triggered when the clock's Track changes by URI,
@@ -150,9 +161,19 @@ final class MenuBarController {
 
     private func show(_ outcome: LookupOutcome) {
         outcomeItem?.title = outcome.menuTitle
-        statusItem.button?.image = NSImage(
-            systemSymbolName: outcome.symbolName,
-            accessibilityDescription: "Lyrify"
-        )
     }
+}
+
+/// Carries a closure to a menu item, which needs an `@objc` target and does not
+/// retain the one it is given.
+@MainActor
+final class MenuActionTarget: NSObject {
+    private let action: () -> Void
+
+    init(_ action: @escaping () -> Void) {
+        self.action = action
+        super.init()
+    }
+
+    @objc func fire() { action() }
 }

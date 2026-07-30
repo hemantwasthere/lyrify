@@ -39,7 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             anchorSource: anchorSource,
             lyricsProvider: lyricsProvider,
             overlayVisibility: overlayVisibility,
-            onVisibilityChange: { overlay.refreshVisibility() }
+            onVisibilityChange: { overlay.refreshVisibility() },
+            onMinimizeToDisc: { overlay.collapseToDisc() }
         )
 
         // Registered before anchoring starts, so it doesn't miss the seed poll.

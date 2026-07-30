@@ -54,7 +54,7 @@ struct OverlayDisplayTests {
         )
 
         #expect(answer == OverlayDisplay.Answer(
-            content: .idle(trackName: MenuBarTitle.text(for: track)),
+            content: .idle(trackName: TrackLabel.text(for: track)),
             nextChange: nil
         ))
     }

@@ -59,7 +59,7 @@ struct LyricsProviderTests {
         let transport = FakeTransport(scripted: [
             (200, record(syncedLyrics: #"[00:10.00] first\n[00:20.00] second"#))
         ])
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         let outcome = await provider.lookup(for: track())
 
@@ -74,7 +74,7 @@ struct LyricsProviderTests {
         let transport = FakeTransport(scripted: [
             (200, record(syncedLyrics: #"[00:10.00] first"#))
         ])
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         _ = await provider.lookup(for: track())
 
@@ -99,7 +99,7 @@ struct LyricsProviderTests {
             (404, Data()),
             (200, Data("[]".utf8)),
         ])
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         let outcome = await provider.lookup(for: track())
 
@@ -134,7 +134,7 @@ struct LyricsProviderTests {
             (404, Data()),
             (200, record(syncedLyrics: #"[00:10.00] recovered"#)),
         ])
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         let outcome = await provider.lookup(for: track())
 
@@ -150,7 +150,7 @@ struct LyricsProviderTests {
             candidate(duration: 420, syncedLyrics: #"[00:10.00] live take"#),
             candidate(duration: 500, syncedLyrics: #"[00:10.00] extended mix"#),
         ]))
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         #expect(await provider.lookup(for: track()) == .noSyncedLyrics)
     }
@@ -164,7 +164,7 @@ struct LyricsProviderTests {
             candidate(duration: 465.586, syncedLyrics: #"[00:10.00] edge"#),
             candidate(duration: 467, syncedLyrics: #"[00:10.00] never reached"#),
         ]))
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         #expect(await provider.lookup(for: track()) == .found([
             LyricLine(text: "edge", start: 10)
@@ -178,7 +178,7 @@ struct LyricsProviderTests {
         let transport = FakeTransport(scripted: [
             (200, Data(#"{"id":1,"instrumental":true,"syncedLyrics":null}"#.utf8))
         ])
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         let outcome = await provider.lookup(for: track())
 
@@ -196,7 +196,7 @@ struct LyricsProviderTests {
             (404, Data()),
             (200, searchBody([])),
         ])
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         let outcome = await provider.lookup(for: track())
 
@@ -211,7 +211,7 @@ struct LyricsProviderTests {
         let transport = FakeTransport(scripted: missesThenSearch([
             #"{"id":1,"duration":467.586,"instrumental":true,"syncedLyrics":"[00:10.00] stray"}"#
         ]))
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         #expect(await provider.lookup(for: track()) == .noSyncedLyrics)
     }
@@ -246,7 +246,7 @@ struct LyricsProviderTests {
         let transport = GatedTransport(
             response: (200, record(syncedLyrics: #"[00:10.00] once"#))
         )
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         async let first = provider.lookup(for: track())
         async let second = provider.lookup(for: track())
@@ -269,7 +269,7 @@ struct LyricsProviderTests {
         let transport = FakeTransport(scripted: [
             (200, record(syncedLyrics: #"[00:10.00] once"#))
         ])
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         let first = await provider.lookup(for: track())
         let second = await provider.lookup(for: track())
@@ -284,7 +284,7 @@ struct LyricsProviderTests {
     @Test("a confirmed miss is remembered with no second round of requests")
     func missRemembered() async {
         let transport = FakeTransport(scripted: missesThenSearch([]))
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         let first = await provider.lookup(for: track())
         let second = await provider.lookup(for: track())
@@ -299,7 +299,7 @@ struct LyricsProviderTests {
     @Test("a lookup after unavailability retries the transport")
     func unavailabilityRetries() async {
         let transport = FakeTransport(scripted: [])
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         let first = await provider.lookup(for: track())
         let second = await provider.lookup(for: track())
@@ -309,12 +309,53 @@ struct LyricsProviderTests {
         #expect(await transport.requested.count == 2)
     }
 
+    /// LRCLIB falls over. Measured on 2026-07-31, consecutive requests returned
+    /// 504, 504, then 200 — so one attempt per Track cost the listener lyrics for
+    /// a whole song that plainly had them.
+    @Test("an unavailable lookup is retried, and a later attempt can still succeed")
+    func retriesUntilAvailable() async {
+        // A gateway error at every widening step, then a clean exact hit on the
+        // retry — LRCLIB's actual behaviour that day.
+        let transport = FakeTransport(scripted: [
+            (504, Data()), (504, Data()), (504, Data()),
+            (200, record(syncedLyrics: #"[00:10.00] first\n[00:20.00] second"#)),
+        ])
+        let provider = LyricsProvider(
+            transport: transport,
+            retryDelays: [.seconds(2), .seconds(5), .seconds(12)],
+            sleep: { _ in }
+        )
+
+        let outcome = await provider.lookup(for: track())
+
+        guard case .found(let lines) = outcome else {
+            Issue.record("expected the retry to find lyrics, got \(outcome)")
+            return
+        }
+        #expect(lines.count == 2)
+    }
+
+    /// A confirmed miss is an answer about the Track, so asking again would only
+    /// cost a free service a second request to be told the same thing.
+    @Test("a confirmed miss is not retried")
+    func missIsNotRetried() async {
+        let transport = FakeTransport(scripted: missesThenSearch([]))
+        let provider = LyricsProvider(
+            transport: transport,
+            retryDelays: [.seconds(2), .seconds(5)],
+            sleep: { _ in Issue.record("a confirmed miss must not wait for a retry") }
+        )
+
+        #expect(await provider.lookup(for: track()) == .noSyncedLyrics)
+        #expect(await transport.requested.count == 3)
+    }
+
     /// Offline is not "no lyrics exist": unavailability must stay
     /// distinguishable so a later replay can retry.
     @Test("a transport failure is unavailability, not a miss")
     func transportFailure() async {
         let transport = FakeTransport(scripted: [])
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         #expect(await provider.lookup(for: track()) == .unavailable)
     }
@@ -324,7 +365,7 @@ struct LyricsProviderTests {
     @Test("an unparseable body is unavailability")
     func malformedBody() async {
         let transport = FakeTransport(scripted: [(200, Data("not json".utf8))])
-        let provider = LyricsProvider(transport: transport)
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
 
         #expect(await provider.lookup(for: track()) == .unavailable)
     }

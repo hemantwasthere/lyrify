@@ -299,6 +299,24 @@ final class NowPlayingView: DraggableBackgroundView {
         cardFade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         layer?.add(cardFade, forKey: "backgroundColor")
         layer?.backgroundColor = color.cgColor
+
+        // The chrome bar and the scrim are part of the card, so they take the
+        // colour too — they were left black, which put a black strip along the top
+        // and a black wash over the middle of a tinted card. Spotify's are neither.
+        chromeBackdrop.layer?.add(cardFade, forKey: "backgroundColor")
+        chromeBackdrop.layer?.backgroundColor = color.cgColor
+        setScrimBase(color)
+    }
+
+    /// Rebuilds the scrim from `color`, keeping the alpha ramp that makes it work.
+    ///
+    /// Safe to hand the artwork's tint rather than black because that tint is held
+    /// to a fixed dark luminance by `ArtworkTint` — there is no cover bright enough
+    /// to turn this into a pale sheet the white glyphs would disappear into.
+    private func setScrimBase(_ color: NSColor) {
+        scrimLayer.colors = [0.30, 0.38, 0.56, 0.78, 0.94].map {
+            color.withAlphaComponent($0).cgColor
+        }
     }
 
     func updateTrackInfo(name: String, artist: String) {
@@ -495,13 +513,7 @@ final class NowPlayingView: DraggableBackgroundView {
         // luminance with and without the controls showing: it never goes fully
         // clear at the top, which is what stops the fade reading as a hard band
         // across the middle of the cover.
-        scrimLayer.colors = [
-            NSColor.black.withAlphaComponent(0.30).cgColor,
-            NSColor.black.withAlphaComponent(0.38).cgColor,
-            NSColor.black.withAlphaComponent(0.56).cgColor,
-            NSColor.black.withAlphaComponent(0.78).cgColor,
-            NSColor.black.withAlphaComponent(0.94).cgColor,
-        ]
+        setScrimBase(OverlayPalette.base)
         scrimLayer.locations = [0, 0.1, 0.4, 0.7, 1]
         scrimLayer.startPoint = CGPoint(x: 0.5, y: 1)
         scrimLayer.endPoint = CGPoint(x: 0.5, y: 0)
@@ -1007,10 +1019,19 @@ private final class HoverPanel: NSView {
 /// Marks the views that must receive their own clicks. Everything else inside
 /// the card — art, labels, empty space — lets the click through to the
 /// `DraggableBackgroundView`, so dragging the Overlay still works from anywhere.
+///
+/// Conformance is the whole of what makes a control clickable here, so anything
+/// added to the card that is not an `NSButton` has to be listed. `ToggleSwitch`
+/// was not, and that is exactly why the "Background color" switch could not be
+/// clicked: `hitTest` found it, walked up looking for a conformer, found none,
+/// and returned nil so the click fell through to the drag handler. Every other
+/// control on the card happens to be an `NSButton`, which is why this went
+/// unnoticed — the switch was the only thing here that wasn't one.
 protocol OverlayInteractive: NSView {}
 extension NSButton: OverlayInteractive {}
 extension OverlayProgressBar: OverlayInteractive {}
 extension WindowResizer: OverlayInteractive {}
+extension ToggleSwitch: OverlayInteractive {}
 
 /// The container holding the miniplayer's controls. Passes clicks on anything
 /// that isn't an `OverlayInteractive` straight through to the draggable

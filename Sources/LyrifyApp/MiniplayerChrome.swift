@@ -22,9 +22,12 @@ final class CloseDotButton: NSButton {
         wantsLayer = true
         toolTip = "Quit Lyrify"
         translatesAutoresizingMaskIntoConstraints = false
+        // 16, not 12. Spotify's dot measures a shade over 15 points across in its
+        // miniplayer, and at 12 ours read as a spot rather than a button — the one
+        // control that quits the app, and the hardest on the card to hit.
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 12),
-            heightAnchor.constraint(equalToConstant: 12),
+            widthAnchor.constraint(equalToConstant: 16),
+            heightAnchor.constraint(equalToConstant: 16),
         ])
     }
 
@@ -75,7 +78,7 @@ final class CloseDotButton: NSButton {
         // The × only appears under the pointer, the way a real traffic light's
         // glyph does.
         guard isHovering else { return }
-        let inset = dot.insetBy(dx: 3.2, dy: 3.2)
+        let inset = dot.insetBy(dx: 4.3, dy: 4.3)
         let cross = NSBezierPath()
         cross.move(to: NSPoint(x: inset.minX, y: inset.minY))
         cross.line(to: NSPoint(x: inset.maxX, y: inset.maxY))

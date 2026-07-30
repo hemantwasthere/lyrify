@@ -122,15 +122,13 @@ final class ToggleSwitch: NSControl {
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// Without this the switch cannot be clicked at all — not "sometimes", ever.
-    ///
     /// The Overlay is a non-activating panel and never becomes key, so every
-    /// click on it is a *first* mouse, and AppKit swallows the first click into a
-    /// window that isn't active unless the view asks for it. `NSButton` asks by
-    /// default, which is why the chrome bar's buttons, the transport, and this
-    /// panel's own "Done" pill all worked and hid the problem — a bare `NSControl`
-    /// does not. `hitTest` returned this view on every pass; `mouseDown` was
-    /// simply never sent.
+    /// click into it is a *first* mouse, which AppKit drops unless the view asks
+    /// for it. `NSButton` asks by default; a bare `NSControl` does not.
+    ///
+    /// This alone was not what stopped the switch working — see
+    /// `OverlayInteractive`, which is what actually discarded the clicks — but it
+    /// is needed just the same, and would have been the next thing in the way.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {

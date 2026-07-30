@@ -13,12 +13,12 @@ desktop and every fullscreen window.
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-201c15?style=flat-square)](https://www.apple.com/macos/)
 [![Swift 6](https://img.shields.io/badge/Swift-6-a86419?style=flat-square)](https://swift.org)
 [![Apple Silicon & Intel](https://img.shields.io/badge/Apple%20Silicon%20%26%20Intel-universal-201c15?style=flat-square)](#install)
-[![lyrify.hemant.lol](https://img.shields.io/badge/lyrify.hemant.lol-a86419?style=flat-square)](https://lyrify.hemant.lol)
+[![lyrify.dev](https://img.shields.io/badge/lyrify.dev-a86419?style=flat-square)](https://lyrify.dev)
 
 <img src=".github/demo.gif" width="680" alt="The Lyrify overlay following a song line by line, the current lyric highlighted as it is sung">
 
 [**Download**](https://github.com/hemantwasthere/lyrify/releases/latest) ·
-[Website](https://lyrify.hemant.lol) ·
+[Website](https://lyrify.dev) ·
 [Report a bug](https://github.com/hemantwasthere/lyrify/issues/new)
 
 </div>
@@ -39,8 +39,8 @@ desktop and every fullscreen window.
 - **Full transport control.** Play, pause, skip, scrub, shuffle, repeat, volume
   and share — Lyrify drives Spotify, it doesn't just watch it.
 - **Feels native.** Real window behaviour: drag from anywhere, resize from any
-  edge or corner, hover-revealed controls, a close dot that returns it to a
-  small disc. No dock icon, no clutter.
+  edge or corner, hover-revealed controls, and a red close dot that does what a
+  red close dot does. No dock icon, no clutter.
 - **Remembers itself.** Position, size, whether it's expanded, and whether the
   artwork tints the panel all survive a restart.
 
@@ -85,15 +85,16 @@ lookup by track title, artist, album and duration.
 
 ## Using it
 
-**The menu bar** shows the current track, and its menu carries a **Show Overlay**
-toggle — so you can put the overlay away without quitting — and **Quit Lyrify**
-(<kbd>⌘</kbd><kbd>Q</kbd>).
+**The menu bar** shows Lyrify's mark and nothing else — the overlay is where the
+track is named. Its menu says whether synced lyrics were found for what's
+playing, and carries **Show Overlay** (put the overlay away without quitting),
+**Minimize to Disc**, and **Quit Lyrify** (<kbd>⌘</kbd><kbd>Q</kbd>).
 
 **The overlay** has three forms, and you move between them by dragging its edges:
 
 | Form | What it is |
 |---|---|
-| **Disc** | A small circle, spinning while a track plays. Click to expand. |
+| **Disc** | A small circle, spinning while a track plays. Click to expand; **Minimize to Disc** in the menu bar is the way back. |
 | **Portrait** | The tall shape: artwork on a panel tinted from the cover, progress, then title and artist. Transport sits over the artwork and appears on hover. |
 | **Band** | Once short enough: a single row — artwork, title, and transport. Controls shed from the outside in as it narrows. |
 
@@ -101,9 +102,10 @@ Point at the overlay and its furniture fades in: the close dot, drag dots, and
 settings. Drag from anywhere on the card to move it; grab any edge or corner to
 resize. The **speech-bubble button** swaps the artwork for lyrics, and the
 **sliders button** opens settings, where *Background color* controls whether the
-panel takes its tint from the album art.
+whole card — panel, chrome bar and all — takes its colour from the album art.
 
-The close dot doesn't quit Lyrify — it returns the overlay to its Disc.
+The close dot quits Lyrify, the way a red dot does everywhere else on the system.
+To put the overlay away and keep it running, use **Show Overlay** in the menu bar.
 
 ## Build from source
 
@@ -112,7 +114,7 @@ git clone https://github.com/hemantwasthere/lyrify.git
 cd lyrify
 
 swift build                 # compile
-swift test                  # 102 tests across 13 suites
+swift test                  # 109 tests across 14 suites
 bash Scripts/build-app.sh   # assemble .build/Lyrify.app
 ```
 

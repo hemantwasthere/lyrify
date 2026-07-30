@@ -1,4 +1,5 @@
 import AppKit
+import LyrifyCore
 
 /// The Overlay's colour values, so every surface in it reads as one system
 /// rather than each view inventing its own greys.
@@ -50,30 +51,28 @@ enum OverlayPalette {
     /// white glyphs stay legible over bright artwork.
     static let scrim = NSColor.black.withAlphaComponent(0.55)
 
-    /// The tint behind the art before any artwork is known — a neutral lift over
-    /// `base`, so the gradient never disappears entirely between Tracks.
-    static let fallbackTint = NSColor(srgbRed: 0.28, green: 0.28, blue: 0.29, alpha: 1)
-
-    /// The same colour with its hue removed. Spotify's "Background color" switch
-    /// does not black the panel out — turning it off leaves the identical wash in
-    /// neutral grey, which is what it measures as with the switch down.
-    static func desaturated(_ color: NSColor) -> NSColor {
-        guard let srgb = color.usingColorSpace(.sRGB) else { return color }
-        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-        srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        return NSColor(hue: hue, saturation: 0, brightness: brightness, alpha: 1)
-    }
-
-    /// The colour Spotify tints the panel behind the cover with: the artwork's
-    /// dominant colour, softened enough to put white text on.
+    /// The tint before any artwork is known — neutral, at the same darkness every
+    /// tint is held to, so the card doesn't flash a different brightness between
+    /// Tracks while the next cover is fetched.
     ///
-    /// Averaging the whole image to a single pixel — the obvious approach, and
-    /// the one this used to take — is the wrong measure. Averaging mixes every
-    /// colour in the cover into one muddy brown-grey, which is why a vivid red
-    /// sleeve came out the same dull shade as a photograph. What is wanted is the
-    /// colour that *dominates*, so the pixels are binned by hue and the busiest
-    /// bin wins, with saturated bins weighted up so a small band of strong colour
-    /// beats a large expanse of near-grey.
+    /// This measures rgb(50, 50, 50), which is all but exactly the rgb(53, 53, 53)
+    /// Spotify's own card shows for a greyscale sleeve — the two agree because
+    /// both are a hueless colour at the same luminance.
+    static let fallbackTint = tinted(hue: 0, saturation: 0, brightness: 1)
+
+    /// The colour Spotify tints its card with: the artwork's dominant hue, at a
+    /// fixed dark luminance.
+    ///
+    /// Averaging the whole image to a single pixel — the obvious approach, and the
+    /// one this used to take — is the wrong measure. Averaging mixes every colour
+    /// in the cover into one muddy brown-grey, which is why a vivid red sleeve
+    /// came out the same dull shade as a photograph. What is wanted is the colour
+    /// that *dominates*, so the pixels are binned by hue and the busiest bin wins,
+    /// with saturated bins weighted up so a small band of strong colour beats a
+    /// large expanse of near-grey.
+    ///
+    /// The binning was already right. What was wrong is everything after it — see
+    /// `ArtworkTint`, which holds the measurements and does the arithmetic.
     static func tint(from image: NSImage) -> NSColor {
         guard let dominant = dominant(of: image),
               let srgb = dominant.usingColorSpace(.sRGB)
@@ -85,17 +84,16 @@ enum OverlayPalette {
         var alpha: CGFloat = 0
         srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
 
-        // Calibrated by sampling both panels side by side with playback paused,
-        // so the same cover is under each: Spotify lands near saturation 0.45 and
-        // brightness 0.75. Binning finds the hue but returns it darker and a
-        // little flatter than Spotify draws it, since the winning bin's mean
-        // pulls in its duller members, so both are lifted to meet it.
-        return NSColor(
-            hue: hue,
-            saturation: min(saturation * 1.15, 0.62),
-            brightness: min(max(brightness * 1.25, 0.32), 0.75),
-            alpha: 1
+        return tinted(hue: hue, saturation: saturation, brightness: brightness)
+    }
+
+    private static func tinted(hue: CGFloat, saturation: CGFloat, brightness: CGFloat) -> NSColor {
+        let c = ArtworkTint.components(
+            hue: Double(hue),
+            saturation: Double(saturation),
+            brightness: Double(brightness)
         )
+        return NSColor(srgbRed: CGFloat(c.red), green: CGFloat(c.green), blue: CGFloat(c.blue), alpha: 1)
     }
 
     /// Bins the artwork's pixels and returns the mean colour of the heaviest bin.
@@ -124,8 +122,20 @@ enum OverlayPalette {
                     + Int(min(saturation, 0.999) * 3) * 3
                     + Int(min(brightness, 0.999) * 3)
 
-                // A strongly coloured pixel counts for more than a washed-out one.
-                let weight = 0.35 + saturation
+                // A strongly coloured pixel counts for more than a washed-out one
+                // — and by a lot. This was `0.35 + saturation`, which is barely a
+                // preference: it lets a grey pixel cast a third of a vote, so a
+                // big washed-out background outvoted a small vivid subject three
+                // pixels to one. Measured against Spotify on a cover with a green
+                // subject on pale ground, Spotify drew rgb(0, 61, 0) where that
+                // weighting gave a near-grey rgb(46, 50, 57).
+                //
+                // Cubed, a pixel at saturation 0.05 is worth 1/4000th of one at
+                // 0.8, so an expanse of near-grey has to be enormous to win. On
+                // genuinely greyscale art every weight is tiny but their ordering
+                // is unchanged, so the busiest bin still wins and the answer is
+                // still grey — the ceiling is what makes that look right.
+                let weight = saturation * saturation * saturation + 0.0001
                 var bin = bins[key] ?? Bin()
                 bin.count += weight
                 bin.r += c.redComponent * weight

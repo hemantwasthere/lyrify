@@ -265,32 +265,40 @@ final class NowPlayingView: DraggableBackgroundView {
         artView.contentTintColor = nil
         artView.image = image
         lastTint = OverlayPalette.tint(from: image)
-        setTint(isBackgroundColorEnabled ? lastTint : OverlayPalette.desaturated(lastTint))
+        setTint(isBackgroundColorEnabled ? lastTint : OverlayPalette.base)
     }
 
     func updatePlaceholder() {
         artView.contentTintColor = OverlayArtworkPlaceholder.tint
         artView.image = OverlayArtworkPlaceholder.image(pointSize: 34)
-        setTint(OverlayPalette.fallbackTint)
+        // Honours the switch like `updateArtwork` does. It didn't before, so with
+        // the switch off a Track whose cover failed to load tinted the card anyway.
+        setTint(isBackgroundColorEnabled ? OverlayPalette.fallbackTint : OverlayPalette.base)
     }
 
     /// Cross-fades the tint rather than cutting to it, so a Track change eases
-    /// into its new colour. Two stops of the same hue — bright at the top,
-    /// sinking into the card's own black — so the art sits in the colour rather
-    /// than on a flat block of it.
+    /// into its new colour.
+    ///
+    /// The colour goes on the card itself as well as the panel, and both stops of
+    /// the gradient are the same, because Spotify's card is one flat colour edge
+    /// to edge. Scanned top to bottom it reads rgb(102, 0, 17) at every row —
+    /// through the chrome strip, past the cover, and behind the title. The panel
+    /// used to carry a graded wash while the card stayed black around it, which
+    /// left a dark band above and below the tint that Spotify simply does not
+    /// have. The gradient layer stays rather than being torn out: it is what
+    /// cross-fades, and a flat two-stop gradient is the cheapest way to keep that.
     private func setTint(_ color: NSColor) {
         let animation = CABasicAnimation(keyPath: "colors")
         animation.duration = 0.45
         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         artPanel.gradient.add(animation, forKey: "colors")
-        // Nearly flat, not a fade to black. Spotify's panel measures 0.424 at
-        // the top and 0.379 at the foot — a wash of one colour, barely graded.
-        // Running it down into the card's black was what left the tint reading
-        // so much darker than Spotify's even once the hue was right.
-        artPanel.gradient.colors = [
-            color.cgColor,
-            color.blended(withFraction: 0.18, of: OverlayPalette.base)?.cgColor ?? color.cgColor,
-        ]
+        artPanel.gradient.colors = [color.cgColor, color.cgColor]
+
+        let cardFade = CABasicAnimation(keyPath: "backgroundColor")
+        cardFade.duration = 0.45
+        cardFade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer?.add(cardFade, forKey: "backgroundColor")
+        layer?.backgroundColor = color.cgColor
     }
 
     func updateTrackInfo(name: String, artist: String) {
@@ -448,7 +456,8 @@ final class NowPlayingView: DraggableBackgroundView {
         // sublayer instead means sizing it by hand from a parent's `layout()`,
         // which runs before nested subviews have their final bounds — so it
         // stays zero-sized and never draws.
-        artPanel.gradient.colors = [OverlayPalette.fallbackTint.cgColor, OverlayPalette.base.cgColor]
+        // Flat, and both stops the same, for the reason `setTint` gives.
+        artPanel.gradient.colors = [OverlayPalette.fallbackTint.cgColor, OverlayPalette.fallbackTint.cgColor]
         // A layer's y axis runs upward, so (0.5, 1) is the *top*. Starting at 0
         // put the first colour at the bottom and rendered both of these gradients
         // upside down — the tint pooling at the bottom and the scrim at its
@@ -640,12 +649,16 @@ final class NowPlayingView: DraggableBackgroundView {
         settingsPanel.update(backgroundColorEnabled: backgroundColorEnabled)
     }
 
-    /// Switches the artwork tint on and off. With it off the panel is left the
-    /// card's own near-black, which is what Spotify's "Background color" switch
-    /// does to its miniplayer.
+    /// Switches the artwork tint on and off.
+    ///
+    /// Off means black, measured: Spotify's card with its "Background color"
+    /// switch down is rgb(0, 0, 0) everywhere. This used to keep the wash and
+    /// merely strip its hue, on the belief that Spotify did the same — it does
+    /// not, and since the wash was also far too bright, turning the switch off
+    /// swapped a coloured panel for a light grey one instead of putting it away.
     func setBackgroundColorEnabled(_ enabled: Bool) {
         isBackgroundColorEnabled = enabled
-        setTint(enabled ? lastTint : OverlayPalette.desaturated(lastTint))
+        setTint(enabled ? lastTint : OverlayPalette.base)
     }
 
     private func setSettingsVisible(_ visible: Bool) {

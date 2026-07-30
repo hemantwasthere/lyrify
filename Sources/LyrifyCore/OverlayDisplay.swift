@@ -12,7 +12,7 @@ import Foundation
 public enum OverlayDisplay {
     public enum Content: Equatable, Sendable {
         case hidden
-        case idle(trackName: String)
+        case idle(trackName: String, note: String?)
         case lines(LineSelection.Content)
     }
 
@@ -30,16 +30,43 @@ public enum OverlayDisplay {
         }
     }
 
+    /// Why there are no lyrics to show, when there are none.
+    ///
+    /// The Idle State used to name the Track and say nothing else, so a lookup
+    /// LRCLIB could not answer looked identical to a song that genuinely has no
+    /// synced lyrics — and identical to Lyrify being broken. It is a free
+    /// community service and it does fall over; when it does, that is worth
+    /// saying rather than leaving the listener to guess whose fault it is.
+    public enum Availability: Equatable, Sendable {
+        case searching
+        case noLyrics
+        case serviceUnavailable
+
+        /// Deliberately quiet: no note at all while a lookup is still in flight,
+        /// because most land fast enough that a message would only flicker.
+        var note: String? {
+            switch self {
+            case .searching: nil
+            case .noLyrics: "No synced lyrics for this track"
+            case .serviceUnavailable: "LRCLIB isn't responding — nothing wrong on your side"
+            }
+        }
+    }
+
     public static func resolve(
         isVisible: Bool,
         state: PlaybackState,
-        lyrics: [LyricLine]?
+        lyrics: [LyricLine]?,
+        availability: Availability = .searching
     ) -> Answer {
         guard isVisible, let track = state.track, let position = state.position else {
             return Answer(content: .hidden, nextChange: nil)
         }
         guard let lyrics else {
-            return Answer(content: .idle(trackName: TrackLabel.text(for: track)), nextChange: nil)
+            return Answer(
+                content: .idle(trackName: TrackLabel.text(for: track), note: availability.note),
+                nextChange: nil
+            )
         }
 
         let selection = LineSelection.at(position, in: lyrics)

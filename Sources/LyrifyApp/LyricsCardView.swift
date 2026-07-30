@@ -15,7 +15,7 @@ final class LyricsCardView: NSView {
     /// Core seams above, never derived here.
     enum Content: Equatable {
         case nothingPlaying
-        case idle(trackName: String)
+        case idle(trackName: String, note: String?)
         case gap
         case lines([LyricsWindow.Entry], fontSize: CGFloat)
     }
@@ -96,14 +96,40 @@ final class LyricsCardView: NSView {
         case .nothingPlaying:
             showSingleLine("Nothing Playing", fontSize: LyricsViewScale.minimumFontSize, alpha: Self.idleAlpha)
 
-        case .idle(let trackName):
-            showSingleLine(trackName, fontSize: LyricsViewScale.minimumFontSize, alpha: Self.idleAlpha)
+        case .idle(let trackName, let note):
+            showIdle(trackName: trackName, note: note)
 
         case .gap:
             showSingleLine(Self.instrumentalGapPlaceholder, fontSize: LyricsViewScale.minimumFontSize, alpha: Self.idleAlpha)
 
         case .lines(let entries, let fontSize):
             showWindow(entries, fontSize: fontSize)
+        }
+    }
+
+    /// The Track's name, and under it — quieter and smaller — why there are no
+    /// lyrics beneath it, when there is a reason worth giving.
+    private func showIdle(trackName: String, note: String?) {
+        guard let note else {
+            showSingleLine(trackName, fontSize: LyricsViewScale.minimumFontSize, alpha: Self.idleAlpha)
+            return
+        }
+
+        for (index, label) in labels.enumerated() {
+            switch index {
+            case 0:
+                label.isHidden = false
+                label.stringValue = trackName
+                label.font = .systemFont(ofSize: LyricsViewScale.minimumFontSize, weight: .semibold)
+                label.alphaValue = Self.idleAlpha
+            case 1:
+                label.isHidden = false
+                label.stringValue = note
+                label.font = .systemFont(ofSize: LyricsViewScale.minimumFontSize - 2, weight: .regular)
+                label.alphaValue = Self.idleAlpha * 0.7
+            default:
+                label.isHidden = true
+            }
         }
     }
 

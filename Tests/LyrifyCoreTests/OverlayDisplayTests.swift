@@ -54,7 +54,7 @@ struct OverlayDisplayTests {
         )
 
         #expect(answer == OverlayDisplay.Answer(
-            content: .idle(trackName: TrackLabel.text(for: track)),
+            content: .idle(trackName: TrackLabel.text(for: track), note: nil),
             nextChange: nil
         ))
     }
@@ -81,5 +81,42 @@ struct OverlayDisplayTests {
 
         let expected = LineSelection.at(15, in: lyrics)
         #expect(answer == OverlayDisplay.Answer(content: .lines(expected.content), nextChange: expected.nextChange))
+    }
+
+    /// LRCLIB falls over, and when it does the Idle State used to look exactly
+    /// like a song that simply has no lyrics — and exactly like Lyrify being
+    /// broken. The note says whose problem it is.
+    @Test("an unavailable lyrics service says so under the track name")
+    func serviceUnavailableIsExplained() {
+        let answer = OverlayDisplay.resolve(
+            isVisible: true,
+            state: .playing(track, position: 10),
+            lyrics: nil,
+            availability: .serviceUnavailable
+        )
+
+        guard case .idle(_, let note) = answer.content else {
+            Issue.record("expected the Idle State, got \(answer.content)")
+            return
+        }
+        #expect(note?.contains("LRCLIB") == true)
+    }
+
+    /// A lookup in flight says nothing: most land fast enough that a message
+    /// would only flicker on screen and away again.
+    @Test("a lookup still in flight adds no note")
+    func searchingIsQuiet() {
+        let answer = OverlayDisplay.resolve(
+            isVisible: true,
+            state: .playing(track, position: 10),
+            lyrics: nil,
+            availability: .searching
+        )
+
+        guard case .idle(_, let note) = answer.content else {
+            Issue.record("expected the Idle State, got \(answer.content)")
+            return
+        }
+        #expect(note == nil)
     }
 }

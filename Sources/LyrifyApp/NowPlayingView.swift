@@ -306,6 +306,9 @@ final class NowPlayingView: DraggableBackgroundView {
         chromeBackdrop.layer?.add(cardFade, forKey: "backgroundColor")
         chromeBackdrop.layer?.backgroundColor = color.cgColor
         setScrimBase(color)
+
+        settingsPanel.layer?.add(cardFade, forKey: "backgroundColor")
+        settingsPanel.setTint(color)
     }
 
     /// Rebuilds the scrim from `color`, keeping the alpha ramp that makes it work.

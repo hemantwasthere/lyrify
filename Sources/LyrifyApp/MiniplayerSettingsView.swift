@@ -66,6 +66,16 @@ final class MiniplayerSettingsView: NSView {
         backgroundColorSwitch.isOn = backgroundColorEnabled
     }
 
+    /// Takes the card's colour, like every other surface on it.
+    ///
+    /// This was pinned to black, so opening settings over a tinted card dropped a
+    /// black sheet across it. Spotify's own panel is not black either — with its
+    /// "Background color" switch on it wears the same colour as the card behind
+    /// it, which is the state you are in while looking at that very switch.
+    func setTint(_ color: NSColor) {
+        layer?.backgroundColor = color.cgColor
+    }
+
     @objc private func doneTapped() {
         onDone?()
     }

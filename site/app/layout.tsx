@@ -29,13 +29,10 @@ export const metadata: Metadata = {
   authors: [{ name: site.author.name, url: site.author.x }],
   alternates: { canonical: "/" },
   appleWebApp: { title: site.name },
-  icons: {
-    icon: [
-      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
-      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
-    ],
-    apple: "/apple-touch-icon.png",
-  },
+  // No `icons` key: `app/favicon.ico`, `app/icon.png` and `app/apple-icon.png`
+  // generate their own link tags, under a content hash. Naming the files here
+  // would pin them to fixed `/public` URLs and hand browsers a favicon they can
+  // cache past a rebrand — which is exactly what kept the green disc onscreen.
   robots: {
     index: true,
     follow: true,

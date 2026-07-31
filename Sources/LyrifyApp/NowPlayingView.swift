@@ -130,6 +130,9 @@ final class NowPlayingView: DraggableBackgroundView {
     /// background-colour switch is off, so turning it back on does not have to
     /// wait for the next Track.
     private var lastTint = OverlayPalette.fallbackTint
+
+    /// The lighter wash the panel keeps with the switch off — see `applyBackground`.
+    private var lastPanelTint = OverlayPalette.fallbackTint
     private var isBackgroundColorEnabled = true
 
     /// Where a just-committed seek asked to be. Spotify keeps reporting the old
@@ -265,15 +268,16 @@ final class NowPlayingView: DraggableBackgroundView {
         artView.contentTintColor = nil
         artView.image = image
         lastTint = OverlayPalette.tint(from: image)
-        setTint(isBackgroundColorEnabled ? lastTint : OverlayPalette.base)
+        lastPanelTint = OverlayPalette.panelTint(from: image)
+        applyBackground()
     }
 
     func updatePlaceholder() {
         artView.contentTintColor = OverlayArtworkPlaceholder.tint
         artView.image = OverlayArtworkPlaceholder.image(pointSize: 34)
-        // Honours the switch like `updateArtwork` does. It didn't before, so with
-        // the switch off a Track whose cover failed to load tinted the card anyway.
-        setTint(isBackgroundColorEnabled ? OverlayPalette.fallbackTint : OverlayPalette.base)
+        lastTint = OverlayPalette.fallbackTint
+        lastPanelTint = OverlayPalette.fallbackTint
+        applyBackground()
     }
 
     /// Cross-fades the tint rather than cutting to it, so a Track change eases
@@ -673,7 +677,43 @@ final class NowPlayingView: DraggableBackgroundView {
     /// swapped a coloured panel for a light grey one instead of putting it away.
     func setBackgroundColorEnabled(_ enabled: Bool) {
         isBackgroundColorEnabled = enabled
-        setTint(enabled ? lastTint : OverlayPalette.base)
+        applyBackground()
+    }
+
+    /// Paints the card for whichever state the switch is in.
+    ///
+    /// **On**, the whole card is one flat colour edge to edge — chrome bar,
+    /// panel and title bar alike — which is what Spotify's card measures as.
+    ///
+    /// **Off** is not black everywhere, which is what this used to do and what
+    /// made the panel behind the cover go dead. Measured against Spotify with its
+    /// own switch down: the chrome bar and title bar are rgb(0, 0, 0), but the
+    /// panel keeps a wash taken from the artwork — rgb(137, 114, 115) at the top
+    /// for a beige sleeve, falling to rgb(82, 65, 66) at the foot. So off means
+    /// black *chrome* around a panel that still answers to the cover, six times
+    /// lighter than the card wears with the switch on.
+    private func applyBackground() {
+        guard isBackgroundColorEnabled else {
+            setTint(OverlayPalette.base)
+            // Restored after the flat colour: `setTint` has just painted the
+            // panel black along with everything else.
+            setPanelWash(lastPanelTint)
+            return
+        }
+        setTint(lastTint)
+    }
+
+    /// The graded wash on the panel alone. The foot is 40% of the way to black,
+    /// which is the fall Spotify's own panel measures across its height.
+    private func setPanelWash(_ color: NSColor) {
+        let animation = CABasicAnimation(keyPath: "colors")
+        animation.duration = 0.45
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        artPanel.gradient.add(animation, forKey: "colors")
+        artPanel.gradient.colors = [
+            color.cgColor,
+            color.blended(withFraction: 0.4, of: OverlayPalette.base)?.cgColor ?? color.cgColor,
+        ]
     }
 
     private func setSettingsVisible(_ visible: Bool) {

@@ -39,29 +39,79 @@ final class OverlayWindow: NSPanel {
     /// grows or shrinks in place rather than jumping, wherever it was
     /// dragged to.
     ///
-    /// When `animated`, the window frame eases to its new size while the
-    /// incoming view fades in — the grow/shrink between the Disc and the card
-    /// that makes expanding and collapsing feel physical rather than snapping.
+    /// When `animated`, the two forms cross-dissolve into one another while the
+    /// window grows or shrinks between them.
+    ///
+    /// The outgoing form is carried through the transition as a **snapshot**,
+    /// laid over the incoming one and dissolved away. That is what makes this
+    /// read as one thing changing shape. Swapping the content view outright and
+    /// fading the newcomer up from nothing — which is what this did before —
+    /// leaves the window empty for the whole resize, so the Disc appeared to
+    /// materialise out of thin air at its new size rather than the card becoming
+    /// it.
+    ///
+    /// A snapshot rather than the real outgoing view for two reasons: the live
+    /// card would still hit-test while it faded, so a click mid-transition could
+    /// land on a transport button that is visually on its way out; and an image
+    /// stretches with the window, so the old content squashes into the new shape
+    /// instead of being cropped by it.
     func setContent(_ view: NSView, size: NSSize? = nil, animated: Bool = false) {
         let center = NSPoint(x: frame.midX, y: frame.midY)
         let newSize = size ?? view.frame.size
         let newOrigin = NSPoint(x: center.x - newSize.width / 2, y: center.y - newSize.height / 2)
         let newFrame = Self.clampedToScreen(NSRect(origin: newOrigin, size: newSize))
 
-        guard animated else {
+        guard animated, let ghost = contentView.map(Self.ghost(of:)) ?? nil else {
             contentView = view
             setFrame(newFrame, display: true)
             return
         }
 
-        view.alphaValue = 0
+        // The incoming form is fully opaque from the first frame; the ghost on
+        // top of it is what the dissolve acts on. Fading both at once would dip
+        // the whole Overlay translucent through the middle of the transition and
+        // show the desktop through it.
+        view.alphaValue = 1
         contentView = view
+        ghost.frame = view.bounds
+        ghost.autoresizingMask = [.width, .height]
+        view.addSubview(ghost)
+
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.26
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.duration = Self.transitionDuration
+            // Leaves quickly and settles slowly, so the size lands before the
+            // eye goes looking for detail in the new form.
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.9, 0.24, 1)
             animator().setFrame(newFrame, display: true)
-            view.animator().alphaValue = 1
+            ghost.animator().alphaValue = 0
+        } completionHandler: {
+            // The handler is nonisolated; AppKit runs it on the main thread.
+            // Same assumption `NowPlayingView` makes for its own completions.
+            MainActor.assumeIsolated { ghost.removeFromSuperview() }
         }
+    }
+
+    /// Slightly longer than the 0.26 this used to run at. The extra time is what
+    /// makes the change of shape legible rather than a flicker; much beyond this
+    /// and it starts to feel slow to answer a click.
+    private static let transitionDuration: TimeInterval = 0.34
+
+    /// A still of `view` as it looks right now, in a view that refuses clicks.
+    private static func ghost(of view: NSView) -> NSImageView? {
+        guard view.bounds.width > 0, view.bounds.height > 0,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+        else { return nil }
+
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(rep)
+
+        let ghost = PassthroughImageView()
+        ghost.image = image
+        // Stretches with the window rather than holding its shape, so the card
+        // squashes down into the Disc instead of being cropped by its mask.
+        ghost.imageScaling = .scaleAxesIndependently
+        return ghost
     }
 
     /// Nudges `frame` back onto the screen it is closest to, so the Overlay can

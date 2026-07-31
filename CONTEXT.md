@@ -35,14 +35,14 @@ _Avoid_: Lyrics (unqualified), LRC
 One timed line of Synced Lyrics.
 
 **Active Line**:
-The Lyric Line whose start time is the most recent one to have passed. There
-is exactly one whenever playback has reached the first Lyric Line, and it may
-be a Gap Marker.
+The Lyric Line whose start time is the most recent one to have passed — the
+line the Track is currently on. There is exactly one whenever playback has
+reached the first Lyric Line, and it may be a Gap Marker.
 
 **Gap Marker**:
-An Active Line with no text — the Synced Lyrics' own way of saying that
-nothing is being sung here. It is a real Active Line, with lines before and
-after it.
+A Lyric Line with no text — the Synced Lyrics' own way of saying that nothing
+is sung from here. It is an ordinary Lyric Line with a start time, so it can
+be the Active Line or sit among the lines around one.
 
 **Instrumental Gap**:
 A stretch mid-Track with nothing being sung, marked by a Gap Marker. The
@@ -63,7 +63,8 @@ and why there are none, rather than a pretence of following it.
 **Overlay**:
 The floating window Lyrify puts on screen. It has three forms: the Disc, and
 the Expanded card's two views.
-_Avoid_: Widget, HUD, panel
+_Avoid_: Widget, HUD — as names for the whole. "Panel" is a surface *within*
+the card (the artwork panel, the settings panel), never the Overlay itself.
 
 **Disc**:
 The Overlay Minimized — a small circle of album art, spinning while a Track
@@ -72,7 +73,9 @@ plays.
 **Expanded card**:
 The Overlay at full size, shaped after Spotify's miniplayer. Shows one of two
 views at its centre.
-_Avoid_: Miniplayer (that is Spotify's, which this imitates)
+_Avoid_: Miniplayer, *as a name for the card itself* — that is Spotify's,
+which this imitates. It stays in the names of the controls modelled directly
+on Spotify's, and in the "Miniplayer settings" panel that mirrors its.
 
 **Now Playing view**:
 The Expanded card showing album art at its centre.

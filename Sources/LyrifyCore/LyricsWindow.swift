@@ -29,9 +29,13 @@ public enum LyricsWindow {
     ///
     /// An odd `lineCount` splits evenly; an even one gives the extra line
     /// to `after`, since upcoming context matters more to a listener than
-    /// reviewing what already passed. Before the first Lyric Line (an intro
-    /// gap) or with empty lyrics, there is no Active Line to centre on, so
-    /// the window is empty.
+    /// reviewing what already passed. In an Intro Gap or with empty lyrics
+    /// there is no Active Line to centre on, so the window is empty.
+    ///
+    /// A Gap Marker is centred on like any other line. That is the whole of
+    /// what keeps the lines either side of an Instrumental Gap on screen
+    /// through the break — the window is not interrupted by one, it simply
+    /// contains it, and the display draws it as "♪" in place of words.
     public static func resolve(at position: TimeInterval, in lyrics: [LyricLine], lineCount: Int) -> [Entry] {
         // `LineSelection.at` is the one place "which line is Active" is
         // decided — reused here rather than re-deriving that rule, even

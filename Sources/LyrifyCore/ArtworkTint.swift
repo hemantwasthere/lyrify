@@ -34,10 +34,31 @@ public enum ArtworkTint {
     /// the two measurements that were actually clipped by it.
     public static let luminanceCeiling = 0.032
 
+    /// The ceiling for the panel behind the cover when "Background color" is
+    /// **off**, which is a different and much lighter thing.
+    ///
+    /// Switching the colour off does not black the card out. Measured against
+    /// Spotify with its own switch down: the chrome bar and the title bar go to
+    /// rgb(0, 0, 0), but the panel the cover sits on keeps a wash taken from the
+    /// artwork — rgb(137, 114, 115) at the top for a beige sleeve, luminance
+    /// 0.186, fading to rgb(82, 65, 66) at the foot. Six times lighter than the
+    /// card wears with the switch on.
+    public static let panelLuminanceCeiling = 0.186
+
     /// How much the extracted saturation is amplified before the solve. Fitted to
     /// the same two covers: their extracted saturations were 0.52 and 0.05, and
     /// Spotify rendered them at 1.00 and 0.13.
     public static let saturationGain = 2.5
+
+    /// The panel wash with the switch *off* takes the artwork's colour as it is.
+    ///
+    /// Spotify's card with the switch on is emphatically not pastel, which is
+    /// what the gain above is for. Its panel with the switch off is the opposite:
+    /// rgb(137, 114, 115) for a beige sleeve is a saturation of 0.17 — the
+    /// cover's own colour, lightly held, not a statement. Boosting it 2.5× turned
+    /// a warm grey sleeve into a vivid gold, which is not what is being asked for
+    /// when someone turns the colour *off*.
+    public static let panelSaturationGain = 1.0
 
     /// The tint for art whose dominant colour is `hue`/`saturation`/`brightness`,
     /// as sRGB components in 0...1.
@@ -48,15 +69,30 @@ public enum ArtworkTint {
     public static func components(
         hue: Double,
         saturation: Double,
-        brightness: Double
+        brightness: Double,
+        ceiling: Double = luminanceCeiling,
+        gain: Double = saturationGain,
+        exact: Bool = false
     ) -> (red: Double, green: Double, blue: Double) {
-        let boosted = min(saturation * saturationGain, 1)
+        let boosted = min(saturation * gain, 1)
         let asGiven = rgb(hue: hue, saturation: boosted, brightness: brightness)
 
-        guard relativeLuminance(red: asGiven.red, green: asGiven.green, blue: asGiven.blue) > luminanceCeiling
+        // `exact` makes the luminance a target rather than a ceiling, lifting art
+        // that came out under it as well as pulling down art that came out over.
+        //
+        // The card wants a ceiling: a nearly black sleeve should stay nearly
+        // black, and forcing it up would make it glow. The panel wash with the
+        // switch off wants a target: Spotify's sits at 0.186 whatever the sleeve,
+        // and left as a ceiling this washed out to rgb(55, 49, 46) against its
+        // rgb(137, 114, 115) — the right hue, a quarter of the light.
+        guard exact || relativeLuminance(red: asGiven.red, green: asGiven.green, blue: asGiven.blue) > ceiling
         else { return asGiven }
 
-        return rgb(hue: hue, saturation: boosted, brightness: brightnessAtCeiling(hue: hue, saturation: boosted))
+        return rgb(
+            hue: hue,
+            saturation: boosted,
+            brightness: brightnessAtCeiling(hue: hue, saturation: boosted, ceiling: ceiling)
+        )
     }
 
     /// The brightness at which `hue`/`saturation` sits exactly on the ceiling.
@@ -66,13 +102,17 @@ public enum ArtworkTint {
     /// all bisection needs — inverting it in closed form means inverting the sRGB
     /// transfer function through a weighted sum. Twenty halvings settle far below
     /// one part in 255, and this runs once per Track.
-    public static func brightnessAtCeiling(hue: Double, saturation: Double) -> Double {
+    public static func brightnessAtCeiling(
+        hue: Double,
+        saturation: Double,
+        ceiling: Double = luminanceCeiling
+    ) -> Double {
         var low = 0.0
         var high = 1.0
         for _ in 0..<20 {
             let mid = (low + high) / 2
             let c = rgb(hue: hue, saturation: saturation, brightness: mid)
-            if relativeLuminance(red: c.red, green: c.green, blue: c.blue) < luminanceCeiling {
+            if relativeLuminance(red: c.red, green: c.green, blue: c.blue) < ceiling {
                 low = mid
             } else {
                 high = mid

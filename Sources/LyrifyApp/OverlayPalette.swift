@@ -73,8 +73,14 @@ enum OverlayPalette {
     ///
     /// The binning was already right. What was wrong is everything after it — see
     /// `ArtworkTint`, which holds the measurements and does the arithmetic.
-    static func tint(from image: NSImage) -> NSColor {
-        guard let dominant = dominant(of: image),
+    static func tint(
+        from image: NSImage,
+        ceiling: Double = ArtworkTint.luminanceCeiling,
+        gain: Double = ArtworkTint.saturationGain,
+        favourVivid: Bool = true,
+        exact: Bool = false
+    ) -> NSColor {
+        guard let dominant = dominant(of: image, favourVivid: favourVivid),
               let srgb = dominant.usingColorSpace(.sRGB)
         else { return fallbackTint }
 
@@ -84,20 +90,50 @@ enum OverlayPalette {
         var alpha: CGFloat = 0
         srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
 
-        return tinted(hue: hue, saturation: saturation, brightness: brightness)
+        return tinted(hue: hue, saturation: saturation, brightness: brightness, ceiling: ceiling, gain: gain, exact: exact)
     }
 
-    private static func tinted(hue: CGFloat, saturation: CGFloat, brightness: CGFloat) -> NSColor {
+    private static func tinted(
+        hue: CGFloat,
+        saturation: CGFloat,
+        brightness: CGFloat,
+        ceiling: Double = ArtworkTint.luminanceCeiling,
+        gain: Double = ArtworkTint.saturationGain,
+        exact: Bool = false
+    ) -> NSColor {
         let c = ArtworkTint.components(
             hue: Double(hue),
             saturation: Double(saturation),
-            brightness: Double(brightness)
+            brightness: Double(brightness),
+            ceiling: ceiling,
+            gain: gain,
+            exact: exact
         )
         return NSColor(srgbRed: CGFloat(c.red), green: CGFloat(c.green), blue: CGFloat(c.blue), alpha: 1)
     }
 
+    /// The lighter wash the panel behind the cover keeps when "Background color"
+    /// is *off* — the same hue, six times the luminance. See
+    /// `ArtworkTint.panelLuminanceCeiling`.
+    static func panelTint(from image: NSImage) -> NSColor {
+        tint(
+            from: image,
+            ceiling: ArtworkTint.panelLuminanceCeiling,
+            gain: ArtworkTint.panelSaturationGain,
+            favourVivid: false,
+            exact: true
+        )
+    }
+
     /// Bins the artwork's pixels and returns the mean colour of the heaviest bin.
-    private static func dominant(of image: NSImage) -> NSColor? {
+    /// `favourVivid` decides which colour "dominant" means, and the two answers
+    /// genuinely differ. On the *Babydoll* sleeve — a large beige field with a
+    /// narrow yellow band across it — vivid picks the yellow and area picks the
+    /// beige. Spotify uses the first for the card with the switch on and the
+    /// second for the panel wash with it off, and measurably so: its off-state
+    /// panel for that cover is rgb(137, 114, 115), the beige, where cubed
+    /// saturation weighting gave rgb(129, 97, 25), the yellow.
+    private static func dominant(of image: NSImage, favourVivid: Bool = true) -> NSColor? {
         guard let small = downsample(image, to: 40) else { return nil }
 
         struct Bin {
@@ -135,7 +171,9 @@ enum OverlayPalette {
                 // genuinely greyscale art every weight is tiny but their ordering
                 // is unchanged, so the busiest bin still wins and the answer is
                 // still grey — the ceiling is what makes that look right.
-                let weight = saturation * saturation * saturation + 0.0001
+                let weight = favourVivid
+                    ? saturation * saturation * saturation + 0.0001
+                    : 1
                 var bin = bins[key] ?? Bin()
                 bin.count += weight
                 bin.r += c.redComponent * weight

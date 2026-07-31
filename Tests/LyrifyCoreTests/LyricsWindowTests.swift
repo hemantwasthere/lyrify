@@ -75,7 +75,51 @@ struct LyricsWindowTests {
         #expect(entries.map(\.role) == [.before, .active, .after, .after])
     }
 
-    @Test("before the first Lyric Line (an intro gap) answers an empty window")
+    /// The parser preserves an empty-text Gap Marker for exactly this moment.
+    /// It is a real Active Line, so the window centres on it like any other —
+    /// which is what keeps the listener's place through a break in the singing
+    /// instead of clearing the card and making them find it again.
+    @Test("an Instrumental Gap centres on its Gap Marker, keeping the lines around it")
+    func instrumentalGapKeepsContext() {
+        let marked = [
+            LyricLine(text: "first", start: 10),
+            LyricLine(text: "second", start: 20),
+            LyricLine(text: "", start: 30),
+            LyricLine(text: "fourth", start: 40),
+            LyricLine(text: "fifth", start: 50),
+        ]
+
+        let entries = LyricsWindow.resolve(at: 35, in: marked, lineCount: 3)
+
+        #expect(entries == [
+            LyricsWindow.Entry(line: marked[1], role: .before),
+            LyricsWindow.Entry(line: marked[2], role: .active),
+            LyricsWindow.Entry(line: marked[3], role: .after),
+        ])
+    }
+
+    @Test("a Gap Marker after the last sung line keeps the lines that led into it")
+    func trailingGapKeepsContext() {
+        let marked = [
+            LyricLine(text: "first", start: 10),
+            LyricLine(text: "second", start: 20),
+            LyricLine(text: "", start: 30),
+        ]
+
+        let entries = LyricsWindow.resolve(at: 40, in: marked, lineCount: 3)
+
+        #expect(entries == [
+            LyricsWindow.Entry(line: marked[0], role: .before),
+            LyricsWindow.Entry(line: marked[1], role: .before),
+            LyricsWindow.Entry(line: marked[2], role: .active),
+        ])
+    }
+
+    /// The other half of the distinction above: an Intro Gap has no Active
+    /// Line at all, because no Lyric Line has been reached yet. There is no
+    /// context to keep, so the window is genuinely empty rather than centred
+    /// on something.
+    @Test("an Intro Gap answers an empty window, having no Active Line to centre on")
     func beforeFirstLine() {
         let entries = LyricsWindow.resolve(at: 3, in: lyrics, lineCount: 3)
 

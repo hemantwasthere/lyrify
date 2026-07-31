@@ -467,8 +467,8 @@ final class OverlayController {
         case .idle(let trackName, let note):
             nowPlayingView.updateLyrics(.idle(trackName: trackName, note: note))
 
-        case .lines(.instrumentalGap):
-            nowPlayingView.updateLyrics(.gap)
+        case .lines(.introGap):
+            nowPlayingView.updateLyrics(.introGap)
 
         case .lines(.lines):
             // `OverlayDisplay` only reaches `.lines` when both are known —

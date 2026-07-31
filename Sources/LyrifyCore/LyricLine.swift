@@ -16,4 +16,13 @@ public struct LyricLine: Equatable, Sendable {
         self.text = text
         self.start = start
     }
+
+    /// Whether this is a Gap Marker — the empty-text line declaring an
+    /// Instrumental Gap rather than carrying words.
+    ///
+    /// Named because it is a domain concept the display has to recognise
+    /// wherever a Lyric Line turns up, not only when it happens to be the
+    /// Active Line. Spelling it inline as `text.isEmpty` at one site is what
+    /// let a marker sitting *beside* the Active Line render as a blank row.
+    public var isGapMarker: Bool { text.isEmpty }
 }

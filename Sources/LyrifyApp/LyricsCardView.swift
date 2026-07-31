@@ -163,15 +163,21 @@ final class LyricsCardView: NSView {
 
             let entry = entries[index]
             let isActive = entry.role == .active
-            // The empty-text marker means an Instrumental Gap, but only the
-            // Active Line can currently be mid-gap; a surrounding line is
-            // always real text.
-            let isGap = isActive && entry.line.text.isEmpty
+            // Any Gap Marker in the window draws "♪", not just the Active one.
+            // This used to require `isActive`, on the belief that a surrounding
+            // line is always real text — it is not. A marker one line either
+            // side of the Active Line is perfectly ordinary, and it rendered as
+            // a blank row eating a slot the listener needed.
+            let isGap = entry.line.isGapMarker
 
             label.isHidden = false
             label.stringValue = isGap ? Self.gapPlaceholder : entry.line.text
             label.font = .systemFont(ofSize: fontSize, weight: isActive ? .semibold : .regular)
-            label.alphaValue = isGap ? Self.idleAlpha : (isActive ? 1.0 : Self.dimmedAlpha)
+            // Role decides prominence; being a gap only softens the Active
+            // Line, never lifts a surrounding one. Keying this off `isGap`
+            // alone would draw a neighbouring "♪" brighter than the real
+            // lyrics beside it.
+            label.alphaValue = isActive ? (isGap ? Self.idleAlpha : 1.0) : Self.dimmedAlpha
         }
     }
 }

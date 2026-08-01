@@ -5,15 +5,19 @@ import AppKit
 /// pill, drawn over the card rather than in a menu.
 ///
 /// Spotify offers two switches, "Background color" and "Queue". Only the first
-/// has any meaning here — Lyrify shows one Track, never a queue — so only the
-/// first is offered rather than showing a switch that would do nothing.
+/// has any meaning here — Lyrify shows one Track, never a queue — so rather
+/// than a switch that would do nothing, the second row is Lyrify's own:
+/// "Lyrics only", which has no counterpart in Spotify's panel because
+/// Spotify's miniplayer is not primarily a lyrics window.
 ///
 /// Deliberately untested — a layout and drawing leaf, verified by hand.
 final class MiniplayerSettingsView: NSView {
     var onDone: (() -> Void)?
     var onBackgroundColorChanged: ((Bool) -> Void)?
+    var onLyricsOnlyChanged: ((Bool) -> Void)?
 
-    private let backgroundColorSwitch = ToggleSwitch()
+    private let backgroundColorSwitch = ToggleSwitch(title: "Background color")
+    private let lyricsOnlySwitch = ToggleSwitch(title: "Lyrics only")
 
     init() {
         super.init(frame: .zero)
@@ -26,21 +30,19 @@ final class MiniplayerSettingsView: NSView {
         heading.font = .systemFont(ofSize: 15, weight: .bold)
         heading.textColor = .white
 
-        let label = NSTextField(labelWithString: "Background color")
-        label.font = .systemFont(ofSize: 13, weight: .regular)
-        label.textColor = .white
-
         backgroundColorSwitch.onToggled = { [weak self] isOn in
             self?.onBackgroundColorChanged?(isOn)
         }
+        lyricsOnlySwitch.onToggled = { [weak self] isOn in
+            self?.onLyricsOnlyChanged?(isOn)
+        }
 
-        let row = NSStackView(views: [label, NSView(), backgroundColorSwitch])
-        row.orientation = .horizontal
-        row.alignment = .centerY
+        let backgroundColorRow = Self.row(for: backgroundColorSwitch)
+        let lyricsOnlyRow = Self.row(for: lyricsOnlySwitch)
 
         let done = DoneButton(target: self, action: #selector(doneTapped))
 
-        let stack = NSStackView(views: [heading, row, done])
+        let stack = NSStackView(views: [heading, backgroundColorRow, lyricsOnlyRow, done])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 16
@@ -52,7 +54,8 @@ final class MiniplayerSettingsView: NSView {
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-            row.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            backgroundColorRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            lyricsOnlyRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
             heading.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
         ])
     }
@@ -62,8 +65,29 @@ final class MiniplayerSettingsView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    /// The row a switch sits in: its name on the left, the switch itself on
+    /// the right.
+    ///
+    /// The name is read off the switch rather than passed in beside it, so the
+    /// words on screen and the words announced to accessibility are one string
+    /// and cannot drift apart as rows are added.
+    private static func row(for control: ToggleSwitch) -> NSStackView {
+        let label = NSTextField(labelWithString: control.title)
+        label.font = .systemFont(ofSize: 13, weight: .regular)
+        label.textColor = .white
+
+        let row = NSStackView(views: [label, NSView(), control])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        return row
+    }
+
     func update(backgroundColorEnabled: Bool) {
         backgroundColorSwitch.isOn = backgroundColorEnabled
+    }
+
+    func update(lyricsOnly: Bool) {
+        lyricsOnlySwitch.isOn = lyricsOnly
     }
 
     /// Takes the card's colour, like every other surface on it.
@@ -88,6 +112,18 @@ final class MiniplayerSettingsView: NSView {
 final class ToggleSwitch: NSControl {
     var onToggled: ((Bool) -> Void)?
 
+    /// What this switch is called — both the words beside it and the name it
+    /// answers to over accessibility.
+    ///
+    /// Given at construction rather than baked in. It used to return the
+    /// literal "Background color", which was harmless only while that was the
+    /// panel's one switch: a second would have announced itself as the first
+    /// to VoiceOver, and to the scripting that drives this app over the
+    /// accessibility tree — the only way its UI is checked at all, the Overlay
+    /// being unscreenshottable here. Two controls with one name is not a
+    /// cosmetic fault; it makes the panel untestable.
+    let title: String
+
     var isOn = false {
         didSet {
             guard isOn != oldValue else { return }
@@ -101,7 +137,8 @@ final class ToggleSwitch: NSControl {
     private static let size = NSSize(width: 40, height: 22)
     private static let inset: CGFloat = 3
 
-    init() {
+    init(title: String) {
+        self.title = title
         super.init(frame: NSRect(origin: .zero, size: Self.size))
 
         wantsLayer = true
@@ -156,7 +193,7 @@ final class ToggleSwitch: NSControl {
     // can a script driving the app to check that it works.
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .checkBox }
-    override func accessibilityLabel() -> String? { "Background color" }
+    override func accessibilityLabel() -> String? { title }
     override func accessibilityValue() -> Any? { isOn }
 
     override func accessibilityPerformPress() -> Bool {

@@ -5,7 +5,10 @@ import LyrifyCore
 /// lines `LyricsWindow` resolves dimmed around it — as many as the resized
 /// card's height calls for, at the font size `LyricsViewScale` maps to it.
 /// Also draws the three cases that have no window to show: "nothing
-/// playing," the Idle State's honest naming, and an Instrumental Gap.
+/// playing," the Idle State's honest naming, and the Intro Gap. An
+/// Instrumental Gap partway through a Track is not one of them — it arrives
+/// as an ordinary window, its Gap Marker drawn as "♪" in the Active Line's
+/// place with the surrounding lines still around it.
 ///
 /// Deliberately untested — a rendering leaf with no decisions of its own;
 /// every decision it draws comes from `OverlayDisplay`, `LineSelection`,
@@ -16,14 +19,19 @@ final class LyricsCardView: NSView {
     enum Content: Equatable {
         case nothingPlaying
         case idle(trackName: String, note: String?)
-        case gap
+        /// The Intro Gap only — the stretch before the first Lyric Line, where
+        /// there is no lyrical context to show because none has happened yet.
+        /// An Instrumental Gap mid-Track arrives as `.lines` instead, carrying
+        /// its Gap Marker along with the lines around it.
+        case introGap
         case lines([LyricsWindow.Entry], fontSize: CGFloat)
     }
 
     private static let maxLines = LyricsViewScale.maximumLineCount
     private static let idleAlpha: CGFloat = 0.6
     private static let dimmedAlpha: CGFloat = 0.55
-    private static let instrumentalGapPlaceholder = "♪"
+    /// Stands in for nothing being sung, in both kinds of gap.
+    private static let gapPlaceholder = "♪"
 
     /// One label per possible line, created once and shown/hidden per
     /// `Content` — cheaper and simpler than adding/removing arranged
@@ -99,8 +107,8 @@ final class LyricsCardView: NSView {
         case .idle(let trackName, let note):
             showIdle(trackName: trackName, note: note)
 
-        case .gap:
-            showSingleLine(Self.instrumentalGapPlaceholder, fontSize: LyricsViewScale.minimumFontSize, alpha: Self.idleAlpha)
+        case .introGap:
+            showSingleLine(Self.gapPlaceholder, fontSize: LyricsViewScale.minimumFontSize, alpha: Self.idleAlpha)
 
         case .lines(let entries, let fontSize):
             showWindow(entries, fontSize: fontSize)
@@ -155,15 +163,21 @@ final class LyricsCardView: NSView {
 
             let entry = entries[index]
             let isActive = entry.role == .active
-            // The empty-text marker means an Instrumental Gap, but only the
-            // Active Line can currently be mid-gap; a surrounding line is
-            // always real text.
-            let isGap = isActive && entry.line.text.isEmpty
+            // Any Gap Marker in the window draws "♪", not just the Active one.
+            // This used to require `isActive`, on the belief that a surrounding
+            // line is always real text — it is not. A marker one line either
+            // side of the Active Line is perfectly ordinary, and it rendered as
+            // a blank row eating a slot the listener needed.
+            let isGap = entry.line.isGapMarker
 
             label.isHidden = false
-            label.stringValue = isGap ? Self.instrumentalGapPlaceholder : entry.line.text
+            label.stringValue = isGap ? Self.gapPlaceholder : entry.line.text
             label.font = .systemFont(ofSize: fontSize, weight: isActive ? .semibold : .regular)
-            label.alphaValue = isGap ? Self.idleAlpha : (isActive ? 1.0 : Self.dimmedAlpha)
+            // Role decides prominence; being a gap only softens the Active
+            // Line, never lifts a surrounding one. Keying this off `isGap`
+            // alone would draw a neighbouring "♪" brighter than the real
+            // lyrics beside it.
+            label.alphaValue = isActive ? (isGap ? Self.idleAlpha : 1.0) : Self.dimmedAlpha
         }
     }
 }

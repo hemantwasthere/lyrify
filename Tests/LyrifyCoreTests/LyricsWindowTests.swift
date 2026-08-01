@@ -75,7 +75,80 @@ struct LyricsWindowTests {
         #expect(entries.map(\.role) == [.before, .active, .after, .after])
     }
 
-    @Test("before the first Lyric Line (an intro gap) answers an empty window")
+    /// The parser preserves an empty-text Gap Marker for exactly this moment.
+    /// It is a real Active Line, so the window centres on it like any other —
+    /// which is what keeps the listener's place through a break in the singing
+    /// instead of clearing the card and making them find it again.
+    @Test("an Instrumental Gap centres on its Gap Marker, keeping the lines around it")
+    func instrumentalGapKeepsContext() {
+        let marked = [
+            LyricLine(text: "first", start: 10),
+            LyricLine(text: "second", start: 20),
+            LyricLine(text: "", start: 30),
+            LyricLine(text: "fourth", start: 40),
+            LyricLine(text: "fifth", start: 50),
+        ]
+
+        let entries = LyricsWindow.resolve(at: 35, in: marked, lineCount: 3)
+
+        #expect(entries == [
+            LyricsWindow.Entry(line: marked[1], role: .before),
+            LyricsWindow.Entry(line: marked[2], role: .active),
+            LyricsWindow.Entry(line: marked[3], role: .after),
+        ])
+    }
+
+    /// A Gap Marker is an ordinary member of the window, not only ever its
+    /// centre — once singing resumes, the marker it resumed from sits among
+    /// the surrounding lines like any other. The renderer believed the
+    /// opposite ("a surrounding line is always real text") and drew this
+    /// entry as a blank row; pinning the shape here is what says otherwise.
+    @Test("a Gap Marker can sit beside the Active Line, not only under it")
+    func gapMarkerAsSurroundingLine() {
+        let marked = [
+            LyricLine(text: "first", start: 10),
+            LyricLine(text: "second", start: 20),
+            LyricLine(text: "", start: 30),
+            LyricLine(text: "fourth", start: 40),
+            LyricLine(text: "fifth", start: 50),
+        ]
+
+        let entries = LyricsWindow.resolve(at: 45, in: marked, lineCount: 3)
+
+        #expect(entries == [
+            LyricsWindow.Entry(line: marked[2], role: .before),
+            LyricsWindow.Entry(line: marked[3], role: .active),
+            LyricsWindow.Entry(line: marked[4], role: .after),
+        ])
+        #expect(entries[0].line.isGapMarker)
+    }
+
+    /// The outro case: a Track whose lyrics end with a Gap Marker has nothing
+    /// after it to borrow, so the window fills backwards. Worth pinning
+    /// separately because it is the one gap where the clamping and the marker
+    /// have to cooperate.
+    @Test("a Gap Marker after the last sung line keeps the lines that led into it")
+    func trailingGapKeepsContext() {
+        let marked = [
+            LyricLine(text: "first", start: 10),
+            LyricLine(text: "second", start: 20),
+            LyricLine(text: "", start: 30),
+        ]
+
+        let entries = LyricsWindow.resolve(at: 40, in: marked, lineCount: 3)
+
+        #expect(entries == [
+            LyricsWindow.Entry(line: marked[0], role: .before),
+            LyricsWindow.Entry(line: marked[1], role: .before),
+            LyricsWindow.Entry(line: marked[2], role: .active),
+        ])
+    }
+
+    /// The other half of the distinction above: an Intro Gap has no Active
+    /// Line at all, because no Lyric Line has been reached yet. There is no
+    /// context to keep, so the window is genuinely empty rather than centred
+    /// on something.
+    @Test("an Intro Gap answers an empty window, having no Active Line to centre on")
     func beforeFirstLine() {
         let entries = LyricsWindow.resolve(at: 3, in: lyrics, lineCount: 3)
 

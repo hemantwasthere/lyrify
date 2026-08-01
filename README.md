@@ -101,8 +101,14 @@ playing, and carries **Show Overlay** (put the overlay away without quitting),
 Point at the overlay and its furniture fades in: the close dot, drag dots, and
 settings. Drag from anywhere on the card to move it; grab any edge or corner to
 resize. The **speech-bubble button** swaps the artwork for lyrics, and the
-**sliders button** opens settings, where *Background color* controls whether the
-whole card — panel, chrome bar and all — takes its colour from the album art.
+**sliders button** opens settings.
+
+Settings holds two switches. *Background color* controls whether the whole card
+— panel, chrome bar and all — takes its colour from the album art. *Lyrics only*
+holds the card on the lyrics and takes away the title, artist and button beneath
+them, giving that strip to the words instead; the card keeps its size, so the
+lyrics simply get a line more room. It applies at every size, and a short wide
+card in this mode is nothing but lyrics until you point at it.
 
 The close dot quits Lyrify, the way a red dot does everywhere else on the system.
 To put the overlay away and keep it running, use **Show Overlay** in the menu bar.

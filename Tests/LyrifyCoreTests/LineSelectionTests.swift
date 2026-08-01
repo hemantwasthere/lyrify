@@ -4,8 +4,8 @@ import Testing
 @testable import LyrifyCore
 
 /// The Overlay's one decision, made pure: given Synced Lyrics and a Playback
-/// Position, what shows — Active Line, Next Line, or an Instrumental Gap —
-/// and the Playback Position at which that answer next changes.
+/// Position, whether an Active Line exists yet — and if so which, with its
+/// Next Line — plus the Playback Position at which that answer next changes.
 @Suite("Line selection")
 struct LineSelectionTests {
     private let lyrics = [
@@ -27,20 +27,24 @@ struct LineSelectionTests {
         ))
     }
 
-    /// The first words appear when they are sung, not when the Track starts.
-    @Test("before the first line is an Instrumental Gap leading into it")
+    /// The first words appear when they are sung, not when the Track starts —
+    /// and until they do there is no Active Line to name.
+    @Test("before the first line there is no Active Line yet: an Intro Gap")
     func introGap() {
         let answer = LineSelection.at(3, in: lyrics)
 
         #expect(answer == LineSelection.Answer(
-            content: .instrumentalGap,
+            content: .introGap,
             nextChange: 10
         ))
     }
 
-    /// The empty-text marker the parser preserves is how a mid-song gap is
-    /// declared; showing it as words would pin nothing on screen.
-    @Test("an empty-text Active Line is an Instrumental Gap")
+    /// The empty-text Gap Marker the parser preserves is how an Instrumental
+    /// Gap declares itself — but it is a Lyric Line with a start time like any
+    /// other, and answering it as the Active Line is what lets callers keep
+    /// the lines either side of the gap on screen. Collapsing it into a gap
+    /// case threw that context away.
+    @Test("a Gap Marker is still the Active Line, not an absence of one")
     func markedGap() {
         let marked = [
             LyricLine(text: "first", start: 10),
@@ -51,7 +55,10 @@ struct LineSelectionTests {
         let answer = LineSelection.at(25, in: marked)
 
         #expect(answer == LineSelection.Answer(
-            content: .instrumentalGap,
+            content: .lines(
+                active: LyricLine(text: "", start: 20),
+                next: LyricLine(text: "third", start: 30)
+            ),
             nextChange: 30
         ))
     }
@@ -88,7 +95,7 @@ struct LineSelectionTests {
         let only = [LyricLine(text: "all there is", start: 5)]
 
         #expect(LineSelection.at(2, in: only) == LineSelection.Answer(
-            content: .instrumentalGap,
+            content: .introGap,
             nextChange: 5
         ))
         #expect(LineSelection.at(9, in: only) == LineSelection.Answer(
@@ -99,10 +106,10 @@ struct LineSelectionTests {
 
     /// The provider never answers found with zero lines, but the selection
     /// must still be total.
-    @Test("empty lyrics are a Gap leading nowhere")
+    @Test("empty lyrics are an Intro Gap leading nowhere")
     func emptyLyrics() {
         #expect(LineSelection.at(10, in: []) == LineSelection.Answer(
-            content: .instrumentalGap,
+            content: .introGap,
             nextChange: nil
         ))
     }

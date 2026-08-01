@@ -16,6 +16,15 @@ import LyrifyCore
 ///   artist, and the transport right-aligned. Progress and the extra controls
 ///   drop away as there stops being room.
 ///
+/// Both layouts have a variation: **Lyrics Only**, set from the settings panel,
+/// which takes the title and artist away and gives the panel the room. In
+/// portrait it runs to the card's own bottom edge; in a Band the cover's
+/// square gives way and the panel stretches across to the transport, with the
+/// settings button moving into the corner the lyrics button has vacated so
+/// there is always a way out. The card never changes size for it — the panel
+/// takes the strip over rather than the window giving it up — and everything
+/// revealed on hover still is.
+///
 /// The card no longer collapses when clicked: resizing replaced that gesture, so
 /// only the chrome bar's red dot returns to the Disc. Dragging anywhere still
 /// moves the Overlay, and `WindowResizer` handles every edge and corner.
@@ -77,7 +86,18 @@ final class NowPlayingView: DraggableBackgroundView {
     var onShare: (() -> Void)?
     var onClose: (() -> Void)?
     var onBackgroundColorChanged: ((Bool) -> Void)?
+    var onLyricsOnlyChanged: ((Bool) -> Void)?
     var onResized: (() -> Void)?
+
+    /// Fired when the card starts hiding its Info Bar, so the controller can
+    /// put the Lyrics view up — that is the whole of what Lyrics Only means,
+    /// and the card cannot do it itself because which view is showing is the
+    /// controller's to decide.
+    ///
+    /// It fires on returning from a Band as well as on the switch being
+    /// flipped, which is what makes the mode reassert itself after a Band has
+    /// let it lapse.
+    var onLyricsOnlyEngaged: (() -> Void)?
 
     /// How much height the Lyrics view actually has. The controller scales the
     /// lyrics to this rather than to the whole card, which is what kept the text
@@ -119,12 +139,26 @@ final class NowPlayingView: DraggableBackgroundView {
 
     private var portraitConstraints: [NSLayoutConstraint] = []
     private var bandConstraints: [NSLayoutConstraint] = []
+    /// A Band's two arrangements, chosen by whether the Info Bar is showing:
+    /// square cover beside the title, or a panel stretched across to the
+    /// transport. Exactly one is active while a Band, neither in portrait.
+    private var bandWithInfoBarConstraints: [NSLayoutConstraint] = []
+    private var bandLyricsOnlyConstraints: [NSLayoutConstraint] = []
     private var chromeSlide: NSLayoutConstraint!
     private var railSlide: NSLayoutConstraint!
     private var artTop: NSLayoutConstraint!
+    /// Portrait's two possible feet for the artwork panel: stopping short of
+    /// the Info Bar, or running to the card's own bottom edge once the Info Bar
+    /// is gone. Exactly one is active while portrait, neither while a Band.
+    private var panelBottomToInfoBar: NSLayoutConstraint!
+    private var panelBottomToCard: NSLayoutConstraint!
     private var isBand = false
     private var isHovering = false
     private var lyricsAvailable = true
+    private var isLyricsOnly = false
+    /// What `applyInfoBarVisibility` last settled on, so the engaged callback
+    /// fires on the transition rather than on every layout pass.
+    private var wasHidingInfoBar = false
 
     /// The tint the current artwork asks for, remembered even while the
     /// background-colour switch is off, so turning it back on does not have to
@@ -133,6 +167,10 @@ final class NowPlayingView: DraggableBackgroundView {
 
     /// The lighter wash the panel keeps with the switch off — see `applyBackground`.
     private var lastPanelTint = OverlayPalette.fallbackTint
+
+    /// What the scrim is currently built from, kept so its ramp can be rebuilt
+    /// when the arrangement changes without waiting for the next Track.
+    private var scrimColor = OverlayPalette.base
     private var isBackgroundColorEnabled = true
 
     /// Where a just-committed seek asked to be. Spotify keeps reporting the old
@@ -239,7 +277,12 @@ final class NowPlayingView: DraggableBackgroundView {
             self.settingsButton.animator().alphaValue = revealed ? 1 : 0
             self.gripGlyph.animator().alphaValue = revealed ? 1 : 0
 
-            if self.isBand {
+            // An ordinary Band keeps its controls on show, having nothing to
+            // hide them behind — its cover is barely larger than they are. A
+            // Lyrics Only Band does have somewhere: the panel runs the whole
+            // width, so the controls go over the lyrics and arrive on hover
+            // like portrait's, leaving the words alone the rest of the time.
+            if self.isBand, !self.hidesInfoBar {
                 self.scrim.animator().alphaValue = 0
                 self.transportRow.animator().alphaValue = 1
                 self.progressSection.animator().alphaValue = 0
@@ -321,9 +364,27 @@ final class NowPlayingView: DraggableBackgroundView {
     /// to a fixed dark luminance by `ArtworkTint` — there is no cover bright enough
     /// to turn this into a pale sheet the white glyphs would disappear into.
     private func setScrimBase(_ color: NSColor) {
-        scrimLayer.colors = [0.30, 0.38, 0.56, 0.78, 0.94].map {
-            color.withAlphaComponent($0).cgColor
-        }
+        scrimColor = color
+        applyScrimRamp()
+    }
+
+    /// How heavily the scrim covers what is under it, which depends on what
+    /// that is.
+    ///
+    /// Over artwork the graded ramp is right: the cover stays visible at the
+    /// top and the controls sit on the solid part below. Over *lyrics* it is
+    /// not. A Lyrics Only Band centres its transport on a panel that is only
+    /// three lines tall, so the play button lands squarely on the Active Line
+    /// — the one line that matters — and a ramp that is half clear at that
+    /// height leaves the two fighting, words legible through the glyphs and
+    /// neither readable. So that arrangement gets a near-flat wash instead:
+    /// while the pointer is on the card the lyrics recede and the controls own
+    /// it, and the moment it leaves they come straight back.
+    private func applyScrimRamp() {
+        let stops: [CGFloat] = (isBand && hidesInfoBar)
+            ? [0.88, 0.90, 0.91, 0.93, 0.94]
+            : [0.30, 0.38, 0.56, 0.78, 0.94]
+        scrimLayer.colors = stops.map { scrimColor.withAlphaComponent($0).cgColor }
     }
 
     func updateTrackInfo(name: String, artist: String) {
@@ -364,6 +425,18 @@ final class NowPlayingView: DraggableBackgroundView {
         artView.isHidden = false
         artView.alphaValue = 1
         lyricsButton.isOn = false
+    }
+
+    /// The same cut as `resetToArtwork`, the other way. Used where the card
+    /// arrives already committed to the Lyrics view — expanding from the Disc
+    /// with Lyrics Only on — so it opens on lyrics rather than showing the
+    /// artwork for a beat and then fading away from it.
+    func resetToLyrics() {
+        artView.isHidden = true
+        artView.alphaValue = 0
+        lyricsView.isHidden = false
+        lyricsView.alphaValue = 1
+        lyricsButton.isOn = true
     }
 
     private func crossFade(from: NSView, to: NSView) {
@@ -655,6 +728,9 @@ final class NowPlayingView: DraggableBackgroundView {
         settingsPanel.onBackgroundColorChanged = { [weak self] isOn in
             self?.onBackgroundColorChanged?(isOn)
         }
+        settingsPanel.onLyricsOnlyChanged = { [weak self] isOn in
+            self?.onLyricsOnlyChanged?(isOn)
+        }
         plate.addSubview(settingsPanel)
         NSLayoutConstraint.activate([
             settingsPanel.leadingAnchor.constraint(equalTo: plate.leadingAnchor),
@@ -666,6 +742,10 @@ final class NowPlayingView: DraggableBackgroundView {
 
     func update(backgroundColorEnabled: Bool) {
         settingsPanel.update(backgroundColorEnabled: backgroundColorEnabled)
+    }
+
+    func update(lyricsOnly: Bool) {
+        settingsPanel.update(lyricsOnly: lyricsOnly)
     }
 
     /// Switches the artwork tint on and off.
@@ -879,6 +959,14 @@ final class NowPlayingView: DraggableBackgroundView {
             constant: Self.bandArtInsetAtRest
         )
 
+        // The panel gives up nothing when the Info Bar goes: it takes the strip
+        // over, keeping the card the same size on screen. Shrinking the window
+        // instead would write a shorter frame to the size preference, which is
+        // then a number meaning "card less a strip" only while a *different*
+        // preference happens to be on.
+        panelBottomToInfoBar = artPanel.bottomAnchor.constraint(equalTo: infoStack.topAnchor, constant: -8)
+        panelBottomToCard = artPanel.bottomAnchor.constraint(equalTo: plate.bottomAnchor, constant: -pm)
+
         portraitConstraints = [
             closeButton.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: 10),
             closeButton.centerYAnchor.constraint(equalTo: chromeBackdrop.centerYAnchor),
@@ -893,7 +981,6 @@ final class NowPlayingView: DraggableBackgroundView {
             artTop,
             artPanel.leadingAnchor.constraint(equalTo: plate.leadingAnchor, constant: pm),
             artPanel.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -pm),
-            artPanel.bottomAnchor.constraint(equalTo: infoStack.topAnchor, constant: -8),
 
             transportRow.centerXAnchor.constraint(equalTo: artPanel.centerXAnchor),
             transportRow.centerYAnchor.constraint(equalTo: artPanel.centerYAnchor),
@@ -925,6 +1012,13 @@ final class NowPlayingView: DraggableBackgroundView {
             railSlide,
             artPanel.topAnchor.constraint(equalTo: plate.topAnchor, constant: 6),
             artPanel.bottomAnchor.constraint(equalTo: plate.bottomAnchor, constant: -6),
+
+            transportRow.centerYAnchor.constraint(equalTo: plate.centerYAnchor),
+        ]
+
+        // The ordinary Band: a square cover, then the title, then the transport
+        // and the lyrics button along the trailing edge.
+        bandWithInfoBarConstraints = [
             artPanel.widthAnchor.constraint(equalTo: artPanel.heightAnchor),
 
             infoStack.leadingAnchor.constraint(equalTo: artPanel.trailingAnchor, constant: 12),
@@ -932,10 +1026,32 @@ final class NowPlayingView: DraggableBackgroundView {
             infoStack.centerYAnchor.constraint(equalTo: plate.centerYAnchor),
 
             transportRow.trailingAnchor.constraint(equalTo: lyricsButton.leadingAnchor, constant: -12),
-            transportRow.centerYAnchor.constraint(equalTo: plate.centerYAnchor),
-
             lyricsButton.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -14),
             lyricsButton.centerYAnchor.constraint(equalTo: plate.centerYAnchor),
+        ]
+
+        // A Lyrics Only Band: the cover's square gives way and the panel runs
+        // the whole width, which is the best shape lyrics get anywhere in the
+        // app — wide, and only as tall as it needs to be.
+        //
+        // Nothing sits *beside* the panel, the way the ordinary Band seats its
+        // transport in a column of its own. The controls are laid over the
+        // lyrics and faded in on hover instead — the same bargain portrait
+        // strikes with its artwork, and the reason a Band at rest here is
+        // lyrics and nothing else. A row of transport buttons parked
+        // permanently beside four words is not what "lyrics only" means.
+        //
+        // The settings button comes along, because a Band otherwise hides it:
+        // without it the switch that turned Lyrics Only on would be
+        // unreachable, and the only way out would be to guess that dragging
+        // the card taller brings it back.
+        bandLyricsOnlyConstraints = [
+            artPanel.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -6),
+
+            transportRow.centerXAnchor.constraint(equalTo: artPanel.centerXAnchor),
+
+            settingsButton.trailingAnchor.constraint(equalTo: plate.trailingAnchor, constant: -10),
+            settingsButton.centerYAnchor.constraint(equalTo: plate.centerYAnchor),
         ]
     }
 
@@ -946,16 +1062,105 @@ final class NowPlayingView: DraggableBackgroundView {
         isBand = band
 
         NSLayoutConstraint.deactivate(band ? portraitConstraints : bandConstraints)
+        // Whichever arrangement the layout being left had chosen goes with it.
+        // `applyInfoBarVisibility` below puts the arriving one's back, and it
+        // can only do that if neither side's alternatives are left dangling —
+        // a stretched panel constraint surviving into portrait would fight the
+        // trailing edge it no longer belongs to.
+        if band {
+            NSLayoutConstraint.deactivate([panelBottomToInfoBar, panelBottomToCard])
+        } else {
+            NSLayoutConstraint.deactivate(bandWithInfoBarConstraints + bandLyricsOnlyConstraints)
+        }
         NSLayoutConstraint.activate(band ? bandConstraints : portraitConstraints)
 
         chromeBackdrop.isHidden = band
         dotsHorizontal.isHidden = band
         dotsVertical.isHidden = !band
-        settingsButton.isHidden = band
         progressSection.isHidden = band
         transportRow.spacing = band ? 14 : 12
 
+        applyInfoBarVisibility()
         refreshRevealedControls(animated: false)
+    }
+
+    /// Turns Lyrics Only on and off. The card only ever *shows* the preference;
+    /// whether it is set belongs to the controller, which persists it.
+    func setLyricsOnly(_ enabled: Bool) {
+        guard isLyricsOnly != enabled else { return }
+        isLyricsOnly = enabled
+        applyInfoBarVisibility()
+        // A Band shows its transport permanently and a Lyrics Only Band does
+        // not, so the answer to "what is revealed" changes with this even
+        // though the pointer has not moved. `applyLayoutMode` follows its own
+        // call with this for the same reason; toggling the switch is the other
+        // way that answer can change.
+        refreshRevealedControls(animated: true)
+    }
+
+    /// Whether the Info Bar is currently put away.
+    ///
+    /// A Band honours the preference too, which it did not at first: it was
+    /// treated as a portrait idea on the grounds that a Band hides the
+    /// settings button, so a Lyrics Only Band would have no way out. Moving
+    /// that button into the lyrics button's corner answers the objection, and
+    /// a wide Band turns out to be the best shape lyrics get anywhere here.
+    ///
+    /// Nothing else overrides it — deliberately, and this was got wrong once.
+    /// Falling back to the ordinary Band below the height lyrics read well at
+    /// seemed reasonable, but the ordinary Band is exactly the arrangement
+    /// that hides the settings button, so a card shrunk to its minimum with
+    /// the mode on lost the lyrics button *and* the settings button together
+    /// and had no control left at all. Asking for lyrics and being given them
+    /// small is the honest answer; `lyricsAvailable` governs whether to
+    /// *offer* the view, which is a different question from whether one was
+    /// asked for outright.
+    private var hidesInfoBar: Bool { isLyricsOnly }
+
+    /// Puts the Info Bar away, or brings it back, and moves the panel's foot to
+    /// suit. The single writer of all three — the two labels, the button, and
+    /// which constraint holds the panel down — because two writers took turns
+    /// undoing each other every time a Lyrics Only card was resized.
+    ///
+    /// Safe to call repeatedly: the constraint swap always runs, since the
+    /// portrait constraints are torn down entirely on the way through a Band
+    /// and something has to put one of them back; `setHidden` already ignores
+    /// unchanged values.
+    private func applyInfoBarVisibility() {
+        let hidden = hidesInfoBar
+
+        if isBand {
+            NSLayoutConstraint.deactivate(hidden ? bandWithInfoBarConstraints : bandLyricsOnlyConstraints)
+            NSLayoutConstraint.activate(hidden ? bandLyricsOnlyConstraints : bandWithInfoBarConstraints)
+        } else {
+            NSLayoutConstraint.deactivate([hidden ? panelBottomToInfoBar : panelBottomToCard])
+            NSLayoutConstraint.activate([hidden ? panelBottomToCard : panelBottomToInfoBar])
+        }
+
+        // The scrim covers lyrics in one arrangement and artwork in the rest,
+        // and those want very different weights.
+        applyScrimRamp()
+
+        setHidden(infoStack, hidden)
+        // The button lives in the Info Bar, so it goes with it — and it is
+        // separately taken away on a card too short to read lyrics in.
+        setHidden(lyricsButton, hidden || !lyricsAvailable)
+        // Portrait always carries the settings button; a Band only does so
+        // while Lyrics Only has freed the corner for it, and is the way out.
+        setHidden(settingsButton, isBand && !hidden)
+        // Nothing to scroll while it cannot be seen. `MarqueeLabel`'s cycle
+        // reschedules itself forever otherwise, animating a constraint behind
+        // the artwork and dirtying layout for as long as the mode is on.
+        titleLabel.setScrolling(!hidden)
+        artistLabel.setScrolling(!hidden)
+
+        // Only on the way *in*, never on every pass. This runs from `layout()`,
+        // and the controller answers it with an animated cross-fade: firing it
+        // again while one is still in flight lets the outgoing fade's completion
+        // hide the view the incoming one just brought back, leaving the centre
+        // of the card blank until something toggles it.
+        defer { wasHidingInfoBar = hidden }
+        if hidden, !wasHidingInfoBar { onLyricsOnlyEngaged?() }
     }
 
     /// Sheds controls the current size has no room for, and takes the lyrics
@@ -980,10 +1185,19 @@ final class NowPlayingView: DraggableBackgroundView {
         let canShowLyrics = lyricsAreaHeight >= LyricsViewScale.minimumUsableHeight
         guard canShowLyrics != lyricsAvailable else { return }
         lyricsAvailable = canShowLyrics
-        lyricsButton.isHidden = !canShowLyrics
+        // Routed through the one place that decides the button's fate, rather
+        // than writing `isHidden` here — two writers would take turns undoing
+        // each other every time a Lyrics Only card was resized.
+        applyInfoBarVisibility()
         // A card shrunk past the point of showing lyrics must not be left
         // stranded on the Lyrics view with no button to leave it.
-        if !canShowLyrics, lyricsButton.isOn {
+        //
+        // Unless Lyrics Only is on, in which case the card is *meant* to be on
+        // lyrics, leaving is the settings switch's job rather than this one's,
+        // and that switch is on screen throughout. Firing here anyway would
+        // have the card fight the preference: lyrics off, no transition left
+        // to turn them back on, and a mode showing artwork.
+        if !canShowLyrics, lyricsButton.isOn, !isLyricsOnly {
             onToggleLyrics?()
         }
     }

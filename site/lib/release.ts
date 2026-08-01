@@ -9,9 +9,9 @@
  * advertised 0.2.0.
  */
 export const release = {
-  version: "0.4.0",
+  version: "0.5.0",
   /** Publish date, ISO. Doubles as the site's last meaningful change. */
-  date: "2026-07-31",
+  date: "2026-08-01",
   repo: "https://github.com/hemantwasthere/lyrify",
 } as const;
 

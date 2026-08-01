@@ -90,8 +90,8 @@ artist, and the button that swaps between the two views.
 
 **Lyrics Only**:
 A persisted preference that holds the Expanded card on the Lyrics view and
-takes away the Info Bar beneath it. It changes what surrounds the Lyrics view,
-never what the Lyrics view draws. Lapses while the card is a Band.
+takes away the Info Bar beneath it, at every size. It changes what surrounds
+the Lyrics view, never what the Lyrics view draws.
 _Avoid_: Hide track info, full lyrics, lyrics mode
 
 **Portrait**:
@@ -99,4 +99,6 @@ The Expanded card's taller shape: centre view above, Info Bar below.
 
 **Band**:
 The Expanded card dragged short enough to become a single horizontal row.
-Sheds controls — and Lyrics Only — as it narrows.
+Sheds controls as it narrows. Has two arrangements: a square cover beside
+the Track's title, or — under Lyrics Only — a panel stretched across to the
+transport, which is the widest the lyrics ever get.

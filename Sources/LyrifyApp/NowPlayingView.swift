@@ -149,6 +149,15 @@ final class NowPlayingView: DraggableBackgroundView {
     private var isHovering = false
     private var lyricsAvailable = true
     private var isLyricsOnly = false
+    /// What `applyInfoBarVisibility` last settled on, so the engaged callback
+    /// fires on the transition rather than on every layout pass.
+    private var wasHidingInfoBar = false
+
+    /// Whether the card currently has the height to read lyrics in. The
+    /// controller consults this before restoring the Lyrics view on expanding
+    /// from the Disc — a card that collapsed while too short is still too
+    /// short when it comes back.
+    var canShowLyrics: Bool { lyricsAvailable }
 
     /// The tint the current artwork asks for, remembered even while the
     /// background-colour switch is off, so turning it back on does not have to
@@ -1029,20 +1038,40 @@ final class NowPlayingView: DraggableBackgroundView {
     /// The preference is untouched by this: it resumes on the way back up.
     private var hidesInfoBar: Bool { isLyricsOnly && !isBand }
 
+    /// Puts the Info Bar away, or brings it back, and moves the panel's foot to
+    /// suit. The single writer of all three — the two labels, the button, and
+    /// which constraint holds the panel down — because two writers took turns
+    /// undoing each other every time a Lyrics Only card was resized.
+    ///
+    /// Safe to call repeatedly: the constraint swap always runs, since the
+    /// portrait constraints are torn down entirely on the way through a Band
+    /// and something has to put one of them back; `setHidden` already ignores
+    /// unchanged values.
     private func applyInfoBarVisibility() {
         let hidden = hidesInfoBar
 
         if !isBand {
-            NSLayoutConstraint.deactivate([hidden ? panelBottomToInfoBar! : panelBottomToCard!])
-            NSLayoutConstraint.activate([hidden ? panelBottomToCard! : panelBottomToInfoBar!])
+            NSLayoutConstraint.deactivate([hidden ? panelBottomToInfoBar : panelBottomToCard])
+            NSLayoutConstraint.activate([hidden ? panelBottomToCard : panelBottomToInfoBar])
         }
 
         setHidden(infoStack, hidden)
         // The button lives in the Info Bar, so it goes with it — and it is
         // separately taken away on a card too short to read lyrics in.
         setHidden(lyricsButton, hidden || !lyricsAvailable)
+        // Nothing to scroll while it cannot be seen. `MarqueeLabel`'s cycle
+        // reschedules itself forever otherwise, animating a constraint behind
+        // the artwork and dirtying layout for as long as the mode is on.
+        titleLabel.setScrolling(!hidden)
+        artistLabel.setScrolling(!hidden)
 
-        if hidden { onLyricsOnlyEngaged?() }
+        // Only on the way *in*, never on every pass. This runs from `layout()`,
+        // and the controller answers it with an animated cross-fade: firing it
+        // again while one is still in flight lets the outgoing fade's completion
+        // hide the view the incoming one just brought back, leaving the centre
+        // of the card blank until something toggles it.
+        defer { wasHidingInfoBar = hidden }
+        if hidden, !wasHidingInfoBar { onLyricsOnlyEngaged?() }
     }
 
     /// Sheds controls the current size has no room for, and takes the lyrics

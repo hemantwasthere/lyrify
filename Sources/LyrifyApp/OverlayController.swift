@@ -258,7 +258,15 @@ final class OverlayController {
         // lyrics never arrived unasked. With Lyrics Only set they *were*
         // asked for, and asked for permanently — landing on artwork would be
         // the surprise instead.
-        isShowingLyrics = lyricsOnlyPreference.isEnabled
+        //
+        // Unless the card is too short to read them in. A Band shrunk past
+        // that point has already been forced off the Lyrics view, and its
+        // button hidden; restoring the card at that same size and putting
+        // lyrics back would strand it there with nothing to press — the very
+        // state that escape hatch exists to prevent. It cannot rescue us here
+        // either, since it only fires when the answer *changes*, and nothing
+        // about the card changed while it was a Disc.
+        isShowingLyrics = lyricsOnlyPreference.isEnabled && nowPlayingView.canShowLyrics
         if isShowingLyrics {
             nowPlayingView.resetToLyrics()
         } else {

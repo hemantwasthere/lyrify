@@ -83,6 +83,23 @@ final class MarqueeLabel: NSView {
 
     private var lastLaidOutWidth: CGFloat = -1
 
+    /// Stops the cycle while the label cannot be seen, and starts it again when
+    /// it can.
+    ///
+    /// The cycle reschedules itself indefinitely and is cancelled only by
+    /// `generation` moving on, so a label hidden mid-scroll would otherwise
+    /// animate a constraint behind whatever covers it for as long as it stayed
+    /// hidden — invalidating layout on every frame of an animation nobody can
+    /// watch. Lyrics Only hides both of these for as long as it is on.
+    func setScrolling(_ enabled: Bool) {
+        guard enabled else {
+            generation += 1
+            leadingConstraint.constant = 0
+            return
+        }
+        restart()
+    }
+
     /// Cancels whatever is running, returns to the start, and begins a new cycle
     /// only if the text actually overflows.
     private func restart() {

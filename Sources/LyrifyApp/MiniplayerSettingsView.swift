@@ -5,15 +5,19 @@ import AppKit
 /// pill, drawn over the card rather than in a menu.
 ///
 /// Spotify offers two switches, "Background color" and "Queue". Only the first
-/// has any meaning here — Lyrify shows one Track, never a queue — so only the
-/// first is offered rather than showing a switch that would do nothing.
+/// has any meaning here — Lyrify shows one Track, never a queue — so rather
+/// than a switch that would do nothing, the second row is Lyrify's own:
+/// "Lyrics only", which has no counterpart in Spotify's panel because
+/// Spotify's miniplayer is not primarily a lyrics window.
 ///
 /// Deliberately untested — a layout and drawing leaf, verified by hand.
 final class MiniplayerSettingsView: NSView {
     var onDone: (() -> Void)?
     var onBackgroundColorChanged: ((Bool) -> Void)?
+    var onLyricsOnlyChanged: ((Bool) -> Void)?
 
     private let backgroundColorSwitch = ToggleSwitch(title: "Background color")
+    private let lyricsOnlySwitch = ToggleSwitch(title: "Lyrics only")
 
     init() {
         super.init(frame: .zero)
@@ -29,12 +33,16 @@ final class MiniplayerSettingsView: NSView {
         backgroundColorSwitch.onToggled = { [weak self] isOn in
             self?.onBackgroundColorChanged?(isOn)
         }
+        lyricsOnlySwitch.onToggled = { [weak self] isOn in
+            self?.onLyricsOnlyChanged?(isOn)
+        }
 
-        let row = Self.row(for: backgroundColorSwitch)
+        let backgroundColorRow = Self.row(for: backgroundColorSwitch)
+        let lyricsOnlyRow = Self.row(for: lyricsOnlySwitch)
 
         let done = DoneButton(target: self, action: #selector(doneTapped))
 
-        let stack = NSStackView(views: [heading, row, done])
+        let stack = NSStackView(views: [heading, backgroundColorRow, lyricsOnlyRow, done])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 16
@@ -46,7 +54,8 @@ final class MiniplayerSettingsView: NSView {
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-            row.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            backgroundColorRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            lyricsOnlyRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
             heading.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
         ])
     }
@@ -75,6 +84,10 @@ final class MiniplayerSettingsView: NSView {
 
     func update(backgroundColorEnabled: Bool) {
         backgroundColorSwitch.isOn = backgroundColorEnabled
+    }
+
+    func update(lyricsOnly: Bool) {
+        lyricsOnlySwitch.isOn = lyricsOnly
     }
 
     /// Takes the card's colour, like every other surface on it.

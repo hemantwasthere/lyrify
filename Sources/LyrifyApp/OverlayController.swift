@@ -26,6 +26,7 @@ final class OverlayController {
     private let expansionPreference: OverlayExpansionPreference
     private let sizePreference: OverlaySizePreference
     private let backgroundColorPreference = OverlayBackgroundColorPreference()
+    private let lyricsOnlyPreference = OverlayLyricsOnlyPreference()
 
     private var rotation = DiscRotation()
 
@@ -40,9 +41,14 @@ final class OverlayController {
     private var lyricsAvailability = OverlayDisplay.Availability.searching
 
     /// Whether the Expanded card is currently showing the Lyrics view
-    /// rather than Now Playing. Resets to Now Playing every time the card
-    /// expands — unlike position and expanded/collapsed state, this isn't
-    /// persisted.
+    /// rather than Now Playing. Not persisted, unlike position and
+    /// expanded/collapsed state — it resets every time the card expands.
+    ///
+    /// Except when Lyrics Only is set, which *is* persisted and drives this.
+    /// The two stay separate variables on purpose: the card forces this one
+    /// off when it shrinks too far to read lyrics in, and that must change
+    /// what is shown without quietly clearing what the listener chose in the
+    /// settings panel. A resize never writes a preference.
     private var isShowingLyrics = false
 
     /// The last-known Anchor's play state — the play/pause button consults
@@ -118,6 +124,13 @@ final class OverlayController {
         let initialFrame = OverlayWindow.clampedToScreen(NSRect(origin: initialOrigin, size: initialSize))
         window.setFrame(initialFrame, display: true)
         if startsExpanded {
+            // Set before `primeExpandedState`, which runs ahead of the
+            // callbacks below being wired — so the card cannot ask for the
+            // Lyrics view here, and is told directly instead.
+            if lyricsOnlyPreference.isEnabled {
+                self.isShowingLyrics = true
+                nowPlayingView.resetToLyrics()
+            }
             enableCardResizing()
             primeExpandedState()
         }
@@ -137,6 +150,24 @@ final class OverlayController {
             guard let self else { return }
             self.backgroundColorPreference.isEnabled = isOn
             self.nowPlayingView.setBackgroundColorEnabled(isOn)
+        }
+        nowPlayingView.onLyricsOnlyChanged = { [weak self] isOn in
+            guard let self else { return }
+            self.lyricsOnlyPreference.isEnabled = isOn
+            self.nowPlayingView.setLyricsOnly(isOn)
+            // The panel is a strip taller or shorter now, and the lyrics are
+            // sized from its height. Laid out here rather than waited for,
+            // because nothing else is coming: a preference flip is not a
+            // resize, and while paused the next Anchor could be seconds away.
+            self.nowPlayingView.layoutSubtreeIfNeeded()
+            self.refreshLyricsDisplay(self.anchorSource.currentEstimate())
+        }
+        // Turning the switch on is one way in; coming back up from a Band,
+        // which lets the mode lapse, is the other. Both land here.
+        nowPlayingView.onLyricsOnlyEngaged = { [weak self] in
+            guard let self, !self.isShowingLyrics else { return }
+            self.isShowingLyrics = true
+            self.nowPlayingView.showLyrics()
         }
         nowPlayingView.onResized = { [weak self] in self?.sizeChanged() }
         nowPlayingView.onTogglePlayPause = { [weak self] in
@@ -223,8 +254,16 @@ final class OverlayController {
     private func expand() {
         guard expansionPreference.isExpanded == false else { return }
         expansionPreference.isExpanded = true
-        isShowingLyrics = false
-        nowPlayingView.resetToArtwork()
+        // Coming back from the Disc used to always land on Now Playing, so
+        // lyrics never arrived unasked. With Lyrics Only set they *were*
+        // asked for, and asked for permanently — landing on artwork would be
+        // the surprise instead.
+        isShowingLyrics = lyricsOnlyPreference.isEnabled
+        if isShowingLyrics {
+            nowPlayingView.resetToLyrics()
+        } else {
+            nowPlayingView.resetToArtwork()
+        }
         window.setContent(nowPlayingView, size: sizePreference.size ?? NowPlayingView.size, animated: true)
         enableCardResizing()
 
@@ -240,6 +279,8 @@ final class OverlayController {
     private func primeExpandedState() {
         nowPlayingView.update(backgroundColorEnabled: backgroundColorPreference.isEnabled)
         nowPlayingView.setBackgroundColorEnabled(backgroundColorPreference.isEnabled)
+        nowPlayingView.update(lyricsOnly: lyricsOnlyPreference.isEnabled)
+        nowPlayingView.setLyricsOnly(lyricsOnlyPreference.isEnabled)
         Task { [weak self] in
             guard let self, let volume = try? self.bridge.currentVolume() else { return }
             self.nowPlayingView.updateVolume(volume)

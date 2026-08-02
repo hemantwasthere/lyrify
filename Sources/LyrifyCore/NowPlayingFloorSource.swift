@@ -13,20 +13,13 @@ import Foundation
 public final class NowPlayingFloorSource: PlaybackSource {
     private var floor = NowPlayingFloor()
 
-    /// Applications whose playback is followed some better way, and so must not
-    /// be answered here.
-    ///
-    /// Spotify publishes to the Floor like everything else, but Lyrify follows
-    /// it over Apple Events instead — where it carries the URI that keys lyrics
-    /// memoisation, the album the first widening step Matches on, and the
-    /// transport controls. Answering it here as well would produce a second,
-    /// poorer Track for the same music.
-    private let notOurs: Set<String>
+    public init() {}
 
-    public static let spotifyBundleIdentifier = "com.spotify.client"
-
-    public init(notOurs: Set<String> = [NowPlayingFloorSource.spotifyBundleIdentifier]) {
-        self.notOurs = notOurs
+    /// Which application holds the Floor, and the one behind it if the
+    /// publisher is a helper. Exposed so arbitration can decide whose playback
+    /// this is; that decision is deliberately not made here.
+    public var holder: (identifier: String?, parent: String?) {
+        (floor.holder, floor.holderParent)
     }
 
     /// Merges one line of the adapter's output.
@@ -48,9 +41,6 @@ public final class NowPlayingFloorSource: PlaybackSource {
     }
 
     public func currentState() throws -> PlaybackState {
-        guard let holder = floor.holder, notOurs.contains(holder) == false else {
-            return .notRunning
-        }
-        return floor.state
+        floor.state
     }
 }

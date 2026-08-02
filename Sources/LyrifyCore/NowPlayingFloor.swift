@@ -26,6 +26,7 @@ public struct NowPlayingFloor: Equatable, Sendable {
     }
 
     private var bundleIdentifier: String?
+    private var parentBundleIdentifier: String?
     private var title: String?
     private var artist: String?
     private var duration: TimeInterval?
@@ -40,6 +41,11 @@ public struct NowPlayingFloor: Equatable, Sendable {
     /// composes the Players, not here — this type only says what the Floor
     /// reports.
     public var holder: String? { bundleIdentifier }
+
+    /// The application behind the publisher, where the publisher is a helper
+    /// process. Absent in every reading observed so far; kept because the
+    /// adapter documents it and consulting it costs nothing.
+    public var holderParent: String? { parentBundleIdentifier }
 
     /// Merges one reading into the snapshot.
     ///
@@ -89,6 +95,9 @@ public struct NowPlayingFloor: Equatable, Sendable {
         // Present-and-null clears; absent leaves alone. `as? String` on an
         // `NSNull` answers nil, which is exactly the clearing behaviour wanted.
         if let value = fields["bundleIdentifier"] { bundleIdentifier = value as? String }
+        if let value = fields["parentApplicationBundleIdentifier"] {
+            parentBundleIdentifier = value as? String
+        }
         if let value = fields["title"] { title = value as? String }
         if let value = fields["artist"] { artist = value as? String }
         if let value = fields["playing"] { isPlaying = value as? Bool ?? false }

@@ -37,6 +37,15 @@ anywhere rather than nothing being paused.
 _Avoid_: Now Playing (unqualified) — the **Now Playing view** is a form of the
 Expanded card and has nothing to do with this.
 
+**Owner**:
+Which Player the Floor names, and so the one Lyrify follows. The Floor says
+*who*; that Player says *what* — Spotify is still asked over its own bridge,
+because the Floor carries neither its URI nor its album nor anything that could
+drive its transport. An application that is neither Spotify nor a browser is no
+Owner at all, and shows the Idle State rather than a wrong Track.
+_Avoid_: Arbitration, source selection — there is no preference to set and
+nothing to choose. The listener chose by pressing play.
+
 **Browser Track**:
 A Track observed on the Now Playing Floor rather than from Spotify: the video's
 title stands in for the name, the channel for the artist, and there is no

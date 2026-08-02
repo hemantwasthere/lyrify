@@ -21,8 +21,27 @@ How far into the current Track playback has reached.
 _Avoid_: Progress, elapsed, timestamp
 
 **Anchor**:
-A reading of what Spotify is playing at one instant, from which the Playback
+A reading of what a Player is playing at one instant, from which the Playback
 Position between readings is estimated.
+
+**Player**:
+Whatever Lyrify is following — the Spotify desktop client, or a browser. Which
+one is being followed is decided once, where the Anchor stream is built;
+nothing downstream of that knows there is more than one.
+
+**Now Playing Floor**:
+The single application macOS resolves as the owner of media playback — the one
+the media keys and Control Center obey. Exactly one application holds it, and a
+paused one keeps holding it, so an empty Floor means nothing is playing
+anywhere rather than nothing being paused.
+_Avoid_: Now Playing (unqualified) — the **Now Playing view** is a form of the
+Expanded card and has nothing to do with this.
+
+**Browser Track**:
+A Track observed on the Now Playing Floor rather than from Spotify: the video's
+title stands in for the name, the channel for the artist, and there is no
+album. It has no Spotify URI, so its identity is composed from the application
+publishing it and those two fields.
 
 ### Lyrics
 

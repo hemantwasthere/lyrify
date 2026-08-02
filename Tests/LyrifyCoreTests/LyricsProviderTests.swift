@@ -369,4 +369,69 @@ struct LyricsProviderTests {
 
         #expect(await provider.lookup(for: track()) == .unavailable)
     }
+
+    private func video(duration: TimeInterval? = 213.061) -> Track {
+        Track(
+            floorBundleIdentifier: "com.google.Chrome",
+            title: "Rick Astley - Never Gonna Give You Up (Official Video)",
+            channel: "Rick Astley",
+            duration: duration
+        )
+    }
+
+    /// A Track with no album cannot answer the album-qualified step, so asking
+    /// is a request spent on a certain miss — and this is a free community
+    /// service. The widening starts one step in.
+    @Test("a Track with no album never spends a request on the album step")
+    func albumStepSkippedWithoutAnAlbum() async {
+        let transport = FakeTransport(scripted: [(404, Data()), (404, Data()), (200, Data("[]".utf8))])
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
+
+        _ = await provider.lookup(for: video())
+
+        let requests = await transport.requested
+        #expect(requests.count == 2)
+        #expect(requests.allSatisfy { $0.query?.contains("album_name") == false })
+        // Read at the boundary, so the provider asks for a song rather than for
+        // a video's title.
+        #expect(requests.first?.query?.contains("track_name=Never%20Gonna%20Give%20You%20Up") == true)
+    }
+
+    /// The Spotify path is untouched: it has an album, so it still asks with
+    /// one first.
+    @Test("a Track with an album still asks with it first")
+    func albumStepKeptWhenThereIsAnAlbum() async {
+        let transport = FakeTransport(scripted: [(404, Data()), (404, Data()), (200, Data("[]".utf8))])
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
+
+        _ = await provider.lookup(for: track())
+
+        let requests = await transport.requested
+        #expect(requests.count == 3)
+        #expect(requests.first?.query?.contains("album_name=Currents") == true)
+    }
+
+    /// Live content reports no duration, and every lookup identifies a
+    /// recording by its length. The answer is known without asking.
+    @Test("a Track with no duration to Match on is answered without a request")
+    func unmatchableTrackSpendsNoRequest() async {
+        let transport = FakeTransport(scripted: [(200, Data("[]".utf8))])
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
+
+        #expect(await provider.lookup(for: video(duration: nil)) == .noSyncedLyrics)
+        #expect(await transport.requested.isEmpty)
+    }
+
+    /// A Non-Lyrical Item is the same conclusion reached for a different
+    /// reason, and costs the service just as little.
+    @Test("a Non-Lyrical Item is answered without a request")
+    func nonLyricalItemSpendsNoRequest() async {
+        let transport = FakeTransport(scripted: [(200, Data("[]".utf8))])
+        let provider = LyricsProvider(transport: transport, retryDelays: [])
+
+        let advert = Track(
+            uri: "spotify:ad:0123456789abcdef", name: "n", artist: "a", album: "al", duration: 30)
+        #expect(await provider.lookup(for: advert) == .noSyncedLyrics)
+        #expect(await transport.requested.isEmpty)
+    }
 }

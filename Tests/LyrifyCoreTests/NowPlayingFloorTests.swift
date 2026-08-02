@@ -19,7 +19,7 @@ struct NowPlayingFloorTests {
          "artist": "Rick Astley", "duration": 213.061, "playing": true}
         """
 
-    @Test("a whole reading becomes a playing Track named by title and channel")
+    @Test("a whole reading becomes a playing Track read from title and channel")
     func wholeReading() throws {
         var floor = NowPlayingFloor()
         try floor.merge(event(Self.chromeVideo))
@@ -29,7 +29,8 @@ struct NowPlayingFloorTests {
             Issue.record("expected playing, got \(floor.state)")
             return
         }
-        #expect(track.name == "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)")
+        // Read into a name at the boundary; the raw title survives in identity.
+        #expect(track.name == "Never Gonna Give You Up")
         #expect(track.artist == "Rick Astley")
         #expect(track.album.isEmpty)
         #expect(track.duration == 213.061)

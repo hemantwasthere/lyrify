@@ -117,9 +117,41 @@ struct FloorArbitratedSourceTests {
         #expect(spotify.asked == 0)
     }
 
-    @Test("nobody holding the Floor is quiet")
+    @Test("nobody holding the Floor, and nothing running, is quiet")
     func nobodyHolds() {
         #expect(try! players(FakeSpotify(), NowPlayingFloorSource()).currentState() == .notRunning)
+    }
+
+    /// An empty Floor is not proof that nothing is playing. Spotify has been
+    /// observed playing without publishing to the Floor at all, and the adapter
+    /// that reads it can fail to start or die at any moment. Asking Spotify
+    /// anyway is what stops a workaround for one of Apple's restrictions from
+    /// taking Spotify support down with it.
+    @Test("an empty Floor still follows a Spotify that is running")
+    func emptyFloorFallsBackToSpotify() {
+        let spotify = FakeSpotify()
+        spotify.state = .playing(Self.song, position: 42)
+
+        let state = try! players(spotify, NowPlayingFloorSource()).currentState()
+        #expect(state.track?.name == "Sesame Syrup")
+        #expect(state.position == 42)
+    }
+
+    /// The same protection when the adapter dies mid-session: the Floor is
+    /// emptied, and Spotify carries on being followed.
+    @Test("the Floor emptying mid-session hands back to Spotify rather than going blank")
+    func floorEmptyingHandsBackToSpotify() {
+        let spotify = FakeSpotify()
+        spotify.state = .playing(Self.song, position: 7)
+        let floor = NowPlayingFloorSource()
+        let players = players(spotify, floor)
+
+        floor.receive(reading("com.google.Chrome", title: "a video"))
+        #expect(try! players.currentState().track?.name == "a video")
+
+        // What `NowPlayingFloorProcess` does when the adapter exits.
+        floor.forget()
+        #expect(try! players.currentState().track?.name == "Sesame Syrup")
     }
 
     /// A refused Automation permission must not become a crash or a broken

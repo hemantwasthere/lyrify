@@ -37,7 +37,19 @@ public final class FloorArbitratedSource: PlaybackSource {
         case .browser:
             return (try? floor.currentState()) ?? .notRunning
 
-        case .unrecognised, .nobody:
+        case .nobody:
+            // An empty Floor is not proof that nothing is playing. Spotify has
+            // been observed playing without publishing to it, and the adapter
+            // that reads it can fail to start or die at any time — it is a
+            // workaround for a restriction Apple imposed once and could impose
+            // again. Falling back to asking Spotify directly is what keeps this
+            // dependency from ever being able to break Spotify support, which
+            // is a rule the browser path is not allowed to bend.
+            return (try? spotify.currentState()) ?? .notRunning
+
+        case .unrecognised:
+            // Something else genuinely owns playback. Showing Spotify's Track
+            // over the top of it would be a wrong answer, not a missing one.
             return .notRunning
         }
     }

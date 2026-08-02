@@ -15,7 +15,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // own doc comment), and it keeps `isAutomationPermitted` consistent
         // across both.
         let bridge = PlayerBridge()
-        let anchorSource = PlaybackAnchorSource(bridge: bridge)
+
+        // The one place that decides which Player is followed, and the only
+        // one that names Spotify's notification. The Anchor stream takes both
+        // as ports, so nothing downstream of it knows either answer.
+        let anchorSource = PlaybackAnchorSource(
+            source: bridge,
+            observations: { PlayerNotificationObserver(onObservation: $0) }
+        )
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
         let artworkProvider = ArtworkProvider(transport: URLSessionLyricsTransport())
         let overlayVisibility = OverlayVisibilityPreference()

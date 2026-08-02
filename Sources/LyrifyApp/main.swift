@@ -8,6 +8,8 @@ import LyrifyCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController?
     private var overlay: OverlayController?
+    // Held because letting it go terminates the adapter it runs.
+    private var floorProcess: NowPlayingFloorProcess?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Shared with OverlayController below — one Spotify truth, not one
@@ -16,12 +18,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // across both.
         let bridge = PlayerBridge()
 
-        // The one place that decides which Player is followed, and the only
-        // one that names Spotify's notification. The Anchor stream takes both
-        // as ports, so nothing downstream of it knows either answer.
+        // The browser Player. The adapter feeds it; if it cannot be found — the
+        // app running unbundled — nothing is fed and it stays quiet.
+        let floorSource = NowPlayingFloorSource()
+        let floorProcess = NowPlayingFloorProcess(source: floorSource)
+        self.floorProcess = floorProcess
+
+        // The one place that decides which Players are followed, and the only
+        // one that names either Spotify's notification or the adapter. The
+        // Anchor stream takes both as ports, so nothing downstream of it knows
+        // that more than one Player exists.
+        let players = PreferredPlaybackSource(preferred: bridge, fallback: floorSource)
+
         let anchorSource = PlaybackAnchorSource(
-            source: bridge,
-            observations: { PlayerNotificationObserver(onObservation: $0) }
+            source: players,
+            observations: { anchor in
+                // Spotify's broadcast already carries the state it is
+                // announcing, so it anchors directly.
+                let spotify = PlayerNotificationObserver(onObservation: anchor)
+
+                // A reading from the Floor says only that something changed;
+                // what to show is still the Players' answer. Readings arrive
+                // when playback changes rather than on a clock, which is
+                // exactly when a fresh Anchor is worth taking.
+                floorProcess.onReading = {
+                    guard let state = try? players.currentState() else { return }
+                    anchor(state)
+                }
+                return spotify
+            }
         )
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
         let artworkProvider = ArtworkProvider(transport: URLSessionLyricsTransport())
@@ -52,6 +77,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Registered before anchoring starts, so it doesn't miss the seed poll.
         anchorSource.start()
+
+        // After the Anchor stream, which is what installs the reading handler
+        // the adapter's output is delivered through.
+        floorProcess.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // The adapter is a child process, and nothing reaps it for us.
+        floorProcess?.stop()
     }
 }
 

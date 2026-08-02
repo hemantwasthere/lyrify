@@ -88,7 +88,7 @@ struct NowPlayingFloorSourceTests {
     func diffsAdvancePosition() {
         let source = NowPlayingFloorSource()
         source.receive(line(Self.chromeVideo))
-        source.receive(line(#"{"elapsedTime": 99.5}"#))
+        source.receive(line(#"{"type": "data", "diff": true, "payload": {"elapsedTime": 99.5}}"#))
 
         guard case .playing(let track, let position) = try? source.currentState() else {
             Issue.record("expected playing")

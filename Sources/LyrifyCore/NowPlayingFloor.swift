@@ -41,12 +41,26 @@ public struct NowPlayingFloor: Equatable, Sendable {
     /// reports.
     public var holder: String? { bundleIdentifier }
 
-    /// Merges one event from the adapter's stream into the snapshot.
+    /// Merges one reading into the snapshot.
     ///
-    /// `null` is the adapter's way of saying nothing is playing anywhere, and
-    /// empties the snapshot — otherwise a Track that stopped would linger.
+    /// Two shapes arrive here, and telling them apart is most of the work:
+    ///
+    /// - The stream wraps every reading in an envelope — `type`, `diff`,
+    ///   `payload` — and says in `diff` whether the payload is the whole
+    ///   picture or only what changed. A whole picture *replaces* the snapshot,
+    ///   so a field that has gone away goes away; a diff is merged over it.
+    /// - A one-shot reading arrives bare, with the fields at the top level, and
+    ///   is always a whole picture.
+    ///
+    /// Nothing playing anywhere is said two ways depending on which shape it
+    /// came in: a bare `null`, or an envelope whose payload has no keys at all.
+    /// Both empty the snapshot, because otherwise a Track that stopped would
+    /// linger on the Overlay.
+    ///
+    /// Within a diff, an explicit `null` is not "unchanged" — it is the
+    /// adapter saying the key has vanished, and it clears the field.
     public mutating func merge(_ event: Data) throws {
-        // `.fragmentsAllowed` because the adapter's "nothing is playing" answer
+        // `.fragmentsAllowed` because the one-shot "nothing is playing" answer
         // is a bare `null`, which is not a container and is otherwise rejected.
         let parsed = try? JSONSerialization.jsonObject(with: event, options: [.fragmentsAllowed])
 
@@ -54,24 +68,35 @@ public struct NowPlayingFloor: Equatable, Sendable {
             self = NowPlayingFloor()
             return
         }
-        guard let fields = parsed as? [String: Any] else {
+        guard let object = parsed as? [String: Any] else {
             throw ParseError.notAReading
         }
 
-        // Absent means unchanged, which is why each of these is a conditional
-        // assignment rather than a plain one. Only `null` clears the Floor.
-        if let bundleIdentifier = fields["bundleIdentifier"] as? String {
-            self.bundleIdentifier = bundleIdentifier
+        let fields: [String: Any]
+        let isDiff: Bool
+        if let payload = object["payload"] as? [String: Any] {
+            fields = payload
+            isDiff = object["diff"] as? Bool ?? false
+        } else {
+            fields = object
+            isDiff = false
         }
-        if let title = fields["title"] as? String { self.title = title }
-        if let artist = fields["artist"] as? String { self.artist = artist }
-        if let isPlaying = fields["playing"] as? Bool { self.isPlaying = isPlaying }
 
-        if let duration = try number(fields["duration"], field: "duration") {
-            self.duration = duration
+        // A whole picture replaces rather than merges, so that anything it no
+        // longer mentions is genuinely gone.
+        if isDiff == false { self = NowPlayingFloor() }
+
+        // Present-and-null clears; absent leaves alone. `as? String` on an
+        // `NSNull` answers nil, which is exactly the clearing behaviour wanted.
+        if let value = fields["bundleIdentifier"] { bundleIdentifier = value as? String }
+        if let value = fields["title"] { title = value as? String }
+        if let value = fields["artist"] { artist = value as? String }
+        if let value = fields["playing"] { isPlaying = value as? Bool ?? false }
+        if fields["duration"] != nil {
+            duration = try number(fields["duration"], field: "duration")
         }
-        if let elapsedTime = try number(fields["elapsedTime"], field: "elapsedTime") {
-            self.elapsedTime = elapsedTime
+        if fields["elapsedTime"] != nil {
+            elapsedTime = try number(fields["elapsedTime"], field: "elapsedTime")
         }
     }
 

@@ -41,11 +41,12 @@ struct NowPlayingFloorTests {
     /// whole reading would answer a Track with no title and no owner — which is
     /// exactly what a naive implementation does, so this is the test that
     /// matters most here.
-    @Test("a diff event carrying one field is merged, not mistaken for a whole reading")
+    @Test("a diff carrying one field is merged, not mistaken for a whole reading")
     func diffEventMerges() throws {
         var floor = NowPlayingFloor()
         try floor.merge(event(Self.chromeVideo))
-        try floor.merge(event(#"{"elapsedTime": 91.511747}"#))
+        try floor.merge(
+            event(#"{"type": "data", "diff": true, "payload": {"elapsedTime": 91.511747}}"#))
 
         #expect(floor.holder == "com.google.Chrome")
         guard case .playing(let track, let position) = floor.state else {
@@ -54,19 +55,6 @@ struct NowPlayingFloorTests {
         }
         #expect(track.artist == "Rick Astley")
         #expect(position == 91.511747)
-    }
-
-    @Test("a diff flipping playing pauses without losing the Track")
-    func diffCanPause() throws {
-        var floor = NowPlayingFloor()
-        try floor.merge(event(Self.chromeVideo))
-        try floor.merge(event(#"{"playing": false}"#))
-
-        guard case .paused(let track, _) = floor.state else {
-            Issue.record("expected paused, got \(floor.state)")
-            return
-        }
-        #expect(track.artist == "Rick Astley")
     }
 
     /// The adapter prints `null` when nothing is playing anywhere. The Floor
@@ -134,6 +122,98 @@ struct NowPlayingFloorTests {
         #expect(throws: NowPlayingFloor.ParseError.notAReading) {
             try floor.merge(event("Invalid JSON value type in dictionary for key 'duration'"))
         }
+    }
+
+    /// The stream wraps every reading in an envelope and says in `diff`
+    /// whether the payload is the whole picture. Unwrapping it is not optional:
+    /// reading the envelope as though it were the payload finds no title and no
+    /// owner, and the Overlay stays blank while a video plays. Shapes below are
+    /// exactly those captured from the stream on 2026-08-02.
+    @Test("a stream envelope is unwrapped, and a whole reading seeds the Floor")
+    func streamEnvelopeSeeds() throws {
+        var floor = NowPlayingFloor()
+        try floor.merge(
+            event(
+                #"""
+                {"type": "data", "diff": false, "payload":
+                  {"bundleIdentifier": "company.thebrowser.Browser", "title": "Path of Pain",
+                   "artist": "fireb0rn", "duration": 248.361, "elapsedTime": 4, "playing": true}}
+                """#))
+
+        #expect(floor.holder == "company.thebrowser.Browser")
+        #expect(floor.state.track?.artist == "fireb0rn")
+        #expect(floor.state.isPlaying)
+    }
+
+    /// The first thing the stream says is that it knows nothing yet.
+    @Test("an envelope with an empty payload is nothing playing")
+    func emptyPayloadIsNothing() throws {
+        var floor = NowPlayingFloor()
+        try floor.merge(event(#"{"type": "data", "diff": false, "payload": {}}"#))
+        #expect(floor.state == .notRunning)
+    }
+
+    @Test("a diff envelope merges over what is already on the Floor")
+    func diffEnvelopeMerges() throws {
+        var floor = NowPlayingFloor()
+        try floor.merge(
+            event(
+                #"""
+                {"type": "data", "diff": false, "payload":
+                  {"bundleIdentifier": "com.google.Chrome", "title": "t", "artist": "c",
+                   "duration": 100, "elapsedTime": 1, "playing": true}}
+                """#))
+        try floor.merge(event(#"{"type": "data", "diff": true, "payload": {"playing": false}}"#))
+
+        guard case .paused(let track, _) = floor.state else {
+            Issue.record("expected paused, got \(floor.state)")
+            return
+        }
+        #expect(track.artist == "c")
+    }
+
+    /// A whole picture replaces rather than merges, so a field the new reading
+    /// does not mention is genuinely gone rather than inherited from the last
+    /// video.
+    @Test("a whole reading replaces rather than inheriting the previous one")
+    func wholeReadingReplaces() throws {
+        var floor = NowPlayingFloor()
+        try floor.merge(
+            event(
+                #"""
+                {"type": "data", "diff": false, "payload":
+                  {"bundleIdentifier": "com.google.Chrome", "title": "first",
+                   "artist": "someone", "duration": 100, "playing": true}}
+                """#))
+        try floor.merge(
+            event(
+                #"""
+                {"type": "data", "diff": false, "payload":
+                  {"bundleIdentifier": "com.google.Chrome", "title": "second", "playing": true}}
+                """#))
+
+        #expect(floor.state.track?.name == "second")
+        // Not carried over from the first reading.
+        #expect(floor.state.track?.artist == "")
+        #expect(floor.state.track?.isLyrical == false)
+    }
+
+    /// Within a diff, an explicit null is the adapter saying a key vanished.
+    @Test("a null inside a diff clears the field rather than meaning unchanged")
+    func nullInDiffClears() throws {
+        var floor = NowPlayingFloor()
+        try floor.merge(
+            event(
+                #"""
+                {"type": "data", "diff": false, "payload":
+                  {"bundleIdentifier": "com.google.Chrome", "title": "t", "artist": "c",
+                   "duration": 100, "playing": true}}
+                """#))
+        try floor.merge(event(#"{"type": "data", "diff": true, "payload": {"duration": null}}"#))
+
+        // Losing the duration is how a Track becomes one that can never be
+        // Matched — the live-content case.
+        #expect(floor.state.track?.isLyrical == false)
     }
 
     /// A reading with no position yet is still a reading; it simply starts at

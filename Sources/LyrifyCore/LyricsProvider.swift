@@ -82,6 +82,12 @@ public actor LyricsProvider {
     /// What is known about the Track's lyrics — answered from memory when a
     /// confirmed outcome exists, otherwise concluded fresh from LRCLIB.
     public func lookup(for track: Track) async -> LyricsOutcome {
+        // Nothing to Match on. A Non-Lyrical Item has no words, and an item
+        // with no duration — live content — cannot be Matched by a service
+        // that identifies recordings by their length. Either way the answer is
+        // known without asking.
+        guard track.isLyrical else { return .noSyncedLyrics }
+
         if let known = remembered[track.uri] { return known }
         if let pending = inFlight[track.uri] { return await pending.value }
 
@@ -122,7 +128,13 @@ public actor LyricsProvider {
     /// the album dropped, then the search. If nothing survives, the answer is
     /// a confirmed miss — never a best guess.
     private func fetchOutcome(for track: Track) async -> LyricsOutcome {
-        for includeAlbum in [true, false] {
+        // A Track with no album cannot answer the album-qualified step, so
+        // asking is a request spent on a certain miss. Keyed off the Track
+        // lacking an album rather than off where it came from, so the pipeline
+        // stays ignorant of origins and Spotify is untouched.
+        let albumSteps = track.album.isEmpty ? [false] : [true, false]
+
+        for includeAlbum in albumSteps {
             switch await exactLookup(for: track, includingAlbum: includeAlbum) {
             case .synced(let lines): return .found(lines)
             // An exact-signature instrumental is authoritative: this

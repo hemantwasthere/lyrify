@@ -36,8 +36,13 @@ struct TrackTests {
         )
 
         #expect(video.uri.hasPrefix("spotify:") == false)
-        #expect(video.name == "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)")
+        // Read into an artist and a name at the boundary, so that everything
+        // downstream receives an ordinary Track.
+        #expect(video.name == "Never Gonna Give You Up")
         #expect(video.artist == "Rick Astley")
+        // Identity is composed from the raw title, so sharpening how titles are
+        // read cannot orphan what has already been remembered.
+        #expect(video.uri.contains("(Official Video)"))
         #expect(video.album.isEmpty)
         #expect(video.duration == 213.061)
     }

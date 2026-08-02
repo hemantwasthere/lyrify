@@ -52,9 +52,12 @@ public struct Track: Equatable, Sendable {
         self.isLyrical = uri.hasPrefix("spotify:track:")
     }
 
-    /// A Track observed on the Now Playing Floor, where the video's title
-    /// stands in for the name and the channel for the artist. There is no
-    /// album; the Floor reports an empty one for every browser item.
+    /// A Track observed on the Now Playing Floor.
+    ///
+    /// The title and channel are read into an artist and a track name here, at
+    /// the boundary, so that everything downstream receives an ordinary Track
+    /// and the lyrics pipeline never learns YouTube exists. There is no album;
+    /// the Floor reports an empty one for every browser item.
     ///
     /// Identity is composed from the publishing application and the two fields
     /// that distinguish one video from the next. It has to be stable across
@@ -74,10 +77,15 @@ public struct Track: Equatable, Sendable {
         channel: String,
         duration: TimeInterval?
     ) {
+        // Identity is composed from the *raw* title and channel, never the
+        // reading of them. Memoised lyrics are keyed on it, so sharpening how
+        // titles are read must not silently orphan everything remembered.
         let separator = PlayerScriptOutput.fieldSeparator
         self.uri = "browser:\(floorBundleIdentifier):\(title)\(separator)\(channel)"
-        self.name = title
-        self.artist = channel
+
+        let reading = VideoTitle.read(title: title, channel: channel)
+        self.name = reading.name
+        self.artist = reading.artist
         self.album = ""
 
         if let duration, duration.isFinite {

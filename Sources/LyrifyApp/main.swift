@@ -24,11 +24,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let floorProcess = NowPlayingFloorProcess(source: floorSource)
         self.floorProcess = floorProcess
 
-        // The one place that decides which Players are followed, and the only
-        // one that names either Spotify's notification or the adapter. The
-        // Anchor stream takes both as ports, so nothing downstream of it knows
-        // that more than one Player exists.
-        let players = PreferredPlaybackSource(preferred: bridge, fallback: floorSource)
+        // The one place that names either Spotify's notification or the
+        // adapter. Which Player is followed is not decided here — macOS has
+        // already decided it, and the Floor is where that answer is read from.
+        // The Anchor stream takes this as a port, so nothing downstream of it
+        // knows that more than one Player exists.
+        let players = FloorArbitratedSource(spotify: bridge, floor: floorSource)
 
         let anchorSource = PlaybackAnchorSource(
             source: players,

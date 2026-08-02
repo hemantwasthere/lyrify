@@ -15,11 +15,6 @@ struct NowPlayingFloorSourceTests {
          "artist": "Rick Astley", "duration": 213.061, "elapsedTime": 12, "playing": true}
         """#
 
-    private static let spotifyTrack = #"""
-        {"bundleIdentifier": "com.spotify.client", "title": "Sesame Syrup",
-         "artist": "Cigarettes After Sex", "duration": 303.296, "elapsedTime": 86.5, "playing": true}
-        """#
-
     @Test("a browser holding the Floor is answered as a playing Track")
     func browserOnTheFloor() {
         let source = NowPlayingFloorSource()
@@ -32,18 +27,6 @@ struct NowPlayingFloorSourceTests {
         #expect(track.name == "Never Gonna Give You Up")
         #expect(track.artist == "Rick Astley")
         #expect(position == 12)
-    }
-
-    /// Spotify publishes to the Floor too, and it is followed over Apple
-    /// Events instead — where it carries its URI, its album and its transport
-    /// controls. Answering it here would produce a second, poorer Track for
-    /// the same music.
-    @Test("Spotify holding the Floor is not answered as a browser Track")
-    func spotifyOnTheFloorIsNotOurs() {
-        let source = NowPlayingFloorSource()
-        source.receive(line(Self.spotifyTrack))
-
-        #expect(try! source.currentState() == .notRunning)
     }
 
     /// A paused application keeps the Floor, so the Floor emptying is the only

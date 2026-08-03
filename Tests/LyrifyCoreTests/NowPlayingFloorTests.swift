@@ -217,6 +217,28 @@ struct NowPlayingFloorTests {
         #expect(floor.state.track?.isLyrical == false)
     }
 
+    /// Captioning taps a process, so the Floor has to say which one.
+    @Test("a reading names the process making the sound")
+    func readingNamesItsProcess() throws {
+        var floor = NowPlayingFloor()
+        try floor.merge(
+            event(
+                #"""
+                {"type": "data", "diff": false, "payload":
+                  {"bundleIdentifier": "com.google.Chrome", "processIdentifier": 52320,
+                   "title": "t", "artist": "c", "duration": 10, "playing": true}}
+                """#))
+
+        #expect(floor.holderProcess == 52320)
+    }
+
+    @Test("a Floor with nothing on it names no process")
+    func emptyFloorNamesNoProcess() throws {
+        var floor = NowPlayingFloor()
+        try floor.merge(event("null"))
+        #expect(floor.holderProcess == nil)
+    }
+
     /// A reading with no position yet is still a reading; it simply starts at
     /// the beginning rather than refusing to exist.
     @Test("a reading with no elapsed time starts at the beginning")

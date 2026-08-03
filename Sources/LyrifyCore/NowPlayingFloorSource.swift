@@ -22,6 +22,9 @@ public final class NowPlayingFloorSource: PlaybackSource {
         (floor.holder, floor.holderParent)
     }
 
+    /// The process making the sound, when the Floor names one.
+    public var holderProcess: Int? { floor.holderProcess }
+
     /// Merges one line of the adapter's output.
     ///
     /// A line that is not a reading is dropped rather than raised. The adapter

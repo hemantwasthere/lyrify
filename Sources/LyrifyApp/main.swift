@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: OverlayController?
     // Held because letting it go terminates the adapter it runs.
     private var floorProcess: NowPlayingFloorProcess?
+    private var liveCaptions: LiveCaptionsController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Shared with OverlayController below — one Spotify truth, not one
@@ -49,6 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return spotify
             }
         )
+        let liveCaptions = LiveCaptionsController()
+        self.liveCaptions = liveCaptions
+
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
         let artworkProvider = ArtworkProvider(transport: URLSessionLyricsTransport())
         let overlayVisibility = OverlayVisibilityPreference()
@@ -73,8 +77,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lyricsProvider: lyricsProvider,
             overlayVisibility: overlayVisibility,
             onVisibilityChange: { overlay.refreshVisibility() },
-            onMinimizeToDisc: { overlay.collapseToDisc() }
+            onMinimizeToDisc: { overlay.collapseToDisc() },
+            liveCaptions: liveCaptions
         )
+
+        // What is captioned is whatever holds the Floor, so the words describe
+        // the thing being played rather than everything the machine is making
+        // noise about.
+        anchorSource.onAnchor { [weak liveCaptions] _ in
+            liveCaptions?.follow(process: floorSource.holderProcess)
+        }
 
         // Registered before anchoring starts, so it doesn't miss the seed poll.
         anchorSource.start()
@@ -82,6 +94,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // After the Anchor stream, which is what installs the reading handler
         // the adapter's output is delivered through.
         floorProcess.start()
+
+        // Last, so a listener who left it on gets it back without delaying
+        // anything that matters more.
+        liveCaptions.restore()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

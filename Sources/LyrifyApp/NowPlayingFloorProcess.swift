@@ -40,8 +40,12 @@ final class NowPlayingFloorProcess {
     /// process behind holding a subscription nobody reads. Observed doing
     /// exactly that before this existed.
     ///
-    /// A kill the app cannot handle takes the adapter with it anyway, because
-    /// it is left holding the read end of a pipe that has gone away.
+    /// A kill the app cannot handle — `SIGKILL`, or a `pkill` that AppKit
+    /// never gets to answer — orphans the adapter, and it has been seen
+    /// surviving one. It does not notice the pipe has gone until it next tries
+    /// to write, which on a quiet Floor may be a long time. Nothing here can
+    /// prevent that; it is recorded so the next person does not read the code
+    /// and believe otherwise.
     func stop() {
         process?.terminationHandler = nil
         process?.terminate()

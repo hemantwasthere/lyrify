@@ -109,6 +109,29 @@ final class NowPlayingView: DraggableBackgroundView {
     private let chromeBackdrop = NSView()
     private let artView = PassthroughImageView()
     private let lyricsView = LyricsCardView()
+
+    /// Shows the Offset while the listener is moving it, and gets out of the
+    /// way once they stop. It is a correction, not a setting: worth seeing
+    /// while you tune it by ear, worth nothing once the words land right.
+    private let offsetReadout: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = .secondaryLabelColor
+        label.alignment = .center
+        label.alphaValue = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private var offsetReadoutHide: DispatchWorkItem?
+
+    /// Called when the listener scrolls over the Lyrics view, in whole steps.
+    var onNudgeLyrics: ((Int) -> Void)?
+
+    /// Scroll arrives in fractions of a line; they are accumulated so a
+    /// trackpad's many small deltas move the Offset at the same rate a mouse
+    /// wheel's few large ones do.
+    private var scrollAccumulation: CGFloat = 0
     private let scrim = NSView()
     private let transportRow = NSStackView()
     private let progressSection = NSStackView()
@@ -452,6 +475,47 @@ final class NowPlayingView: DraggableBackgroundView {
         }
     }
 
+    /// Nudging the words is a scroll over them: there is no room in this card
+    /// for a control that would only matter on the videos that need it, and a
+    /// correction tuned by ear wants a continuous gesture rather than a button
+    /// pressed twenty times.
+    override func scrollWheel(with event: NSEvent) {
+        guard onNudgeLyrics != nil, lyricsView.isHidden == false else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        scrollAccumulation += event.scrollingDeltaY
+        let steps = Int((scrollAccumulation / Self.scrollPerStep).rounded(.towardZero))
+        guard steps != 0 else { return }
+
+        scrollAccumulation -= CGFloat(steps) * Self.scrollPerStep
+        onNudgeLyrics?(steps)
+    }
+
+    /// How much scrolling moves the Offset by one step.
+    private static let scrollPerStep: CGFloat = 6
+
+    /// Shows the Offset, then fades it away once the listener stops moving it.
+    func showLyricsOffset(_ seconds: TimeInterval) {
+        offsetReadoutHide?.cancel()
+
+        offsetReadout.stringValue =
+            seconds == 0
+            ? "lyrics in time"
+            : String(format: "lyrics %@%.2fs", seconds > 0 ? "+" : "-", abs(seconds))
+        offsetReadout.alphaValue = 1
+
+        let hide = DispatchWorkItem { [weak self] in
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.4
+                self?.offsetReadout.animator().alphaValue = 0
+            }
+        }
+        offsetReadoutHide = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4, execute: hide)
+    }
+
     func updateLyrics(_ content: LyricsCardView.Content) {
         lyricsView.update(with: content)
     }
@@ -584,6 +648,11 @@ final class NowPlayingView: DraggableBackgroundView {
         lyricsView.alphaValue = 0
         lyricsView.translatesAutoresizingMaskIntoConstraints = false
         artPanel.addSubview(lyricsView)
+        artPanel.addSubview(offsetReadout)
+        NSLayoutConstraint.activate([
+            offsetReadout.centerXAnchor.constraint(equalTo: artPanel.centerXAnchor),
+            offsetReadout.bottomAnchor.constraint(equalTo: artPanel.bottomAnchor, constant: -6),
+        ])
 
         // Not a flat wash: clear at the top and deepening toward the bottom, so
         // the art stays visible above while the controls sit on something solid

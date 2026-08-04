@@ -28,6 +28,12 @@ final class OverlayController {
     private let backgroundColorPreference = OverlayBackgroundColorPreference()
     private let lyricsOnlyPreference = OverlayLyricsOnlyPreference()
 
+    /// The listener's corrections, loaded once and written back as they nudge.
+    /// A Match can be right but shifted — a video with an intro card is the
+    /// same recording started late — and only the listener can hear that.
+    private let offsetsPreference = LyricsOffsetsPreference()
+    private var offsets = LyricsOffsets()
+
     private var rotation = DiscRotation()
 
     /// The current Track's Synced Lyrics once found; nil while looking up,
@@ -106,6 +112,7 @@ final class OverlayController {
         self.positionPreference = positionPreference
         self.expansionPreference = expansionPreference
         self.sizePreference = sizePreference
+        self.offsets = offsetsPreference.offsets
 
         let discView = DiscView()
         let nowPlayingView = NowPlayingView()
@@ -145,6 +152,7 @@ final class OverlayController {
         // quitting. "Minimize to Disc" moved to the status item's menu, next to
         // "Show Overlay", where the other two window-state commands already live.
         nowPlayingView.onClose = { NSApp.terminate(nil) }
+        nowPlayingView.onNudgeLyrics = { [weak self] steps in self?.nudgeLyrics(by: steps) }
         nowPlayingView.onShare = { [weak self] in self?.copyTrackLink() }
         nowPlayingView.onBackgroundColorChanged = { [weak self] isOn in
             guard let self else { return }
@@ -525,9 +533,26 @@ final class OverlayController {
             // the card sized every line for a box roughly twice as tall as the
             // one it actually had, which is what made the lyrics overflow.
             let scale = LyricsViewScale.resolve(forHeight: nowPlayingView.lyricsAreaHeight)
-            let entries = LyricsWindow.resolve(at: position, in: lyrics, lineCount: scale.lineCount)
+            let entries = LyricsWindow.resolve(
+                at: offsets.adjusted(position, for: currentTrackURI ?? ""),
+                in: lyrics,
+                lineCount: scale.lineCount
+            )
             nowPlayingView.updateLyrics(.lines(entries, fontSize: scale.fontSize))
         }
+    }
+
+    /// Moves the current Track's Offset, shows what it is now, and re-chooses
+    /// the Active Line immediately — the listener is tuning by ear, so the
+    /// words have to move while they are moving them.
+    private func nudgeLyrics(by steps: Int) {
+        guard let uri = currentTrackURI else { return }
+
+        offsets.nudge(uri, by: steps)
+        offsetsPreference.offsets = offsets
+
+        nowPlayingView.showLyricsOffset(offsets.offset(for: uri))
+        refreshLyricsDisplay(anchorSource.currentEstimate())
     }
 
     private static func defaultOrigin(for size: NSSize) -> NSPoint {

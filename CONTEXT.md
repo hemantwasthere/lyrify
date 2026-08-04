@@ -86,6 +86,15 @@ _Avoid_: Instrumental gap (they are not the same thing)
 What is shown for a Track with no Synced Lyrics — the Track named honestly,
 and why there are none, rather than a pretence of following it.
 
+**Offset**:
+A correction the listener applies by ear when a Match is right but shifted —
+a music video carrying an intro card ahead of the song is the same recording
+started late. It moves which Lyric Line is Active and nothing else: the
+Playback Position, the progress bar and everything reported about the Player
+stay as observed. Remembered against the Track, so a video corrected once
+stays corrected.
+_Avoid_: Delay, sync adjustment, calibration
+
 ### The widget
 
 **Overlay**:

@@ -36,27 +36,6 @@ final class ProcessAudioTap: @unchecked Sendable {
     /// The shape the tap answers, once started.
     private(set) var format: AVAudioFormat?
 
-    /// Core Audio identifies processes by its own object id, not by pid, and
-    /// only has one for a process that has played audio.
-    private static func audioObject(for pid: pid_t) throws -> AudioObjectID {
-        var pidValue = pid
-        var object = AudioObjectID(kAudioObjectUnknown)
-        var size = UInt32(MemoryLayout<AudioObjectID>.size)
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyTranslatePIDToProcessObject,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain)
-
-        let status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject), &address,
-            UInt32(MemoryLayout<pid_t>.size), &pidValue, &size, &object)
-
-        guard status == noErr, object != kAudioObjectUnknown else {
-            throw TapError.processHasNoAudio(pid)
-        }
-        return object
-    }
-
     private static func defaultOutputUID() throws -> String {
         var deviceID = AudioObjectID(kAudioObjectUnknown)
         var size = UInt32(MemoryLayout<AudioObjectID>.size)
@@ -78,14 +57,21 @@ final class ProcessAudioTap: @unchecked Sendable {
         return uid as String
     }
 
-    /// Starts listening to `pid`, handing each buffer to `onAudio` **on the
-    /// audio thread**. Whatever it does must be cheap and must not hop actors.
-    func start(pid: pid_t, onAudio: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws {
-        let object = try Self.audioObject(for: pid)
+    /// Starts listening to everything `owner` plays through, handing each
+    /// buffer to `onAudio` **on the audio thread**. Whatever it does must be
+    /// cheap and must not hop actors.
+    ///
+    /// `owner` is the process the Floor named, but the sound often comes from a
+    /// descendant of it — a browser plays through a helper. Every audio process
+    /// in that tree is tapped together, so whichever one is playing is heard
+    /// without having to guess which, and nothing outside the application is.
+    func start(owner: pid_t, onAudio: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws {
+        let objects = AudioProcesses.objects(ownedBy: owner)
+        guard objects.isEmpty == false else { throw TapError.processHasNoAudio(owner) }
 
         // A mono mixdown, because the transcriber wants mono anyway — one fewer
         // conversion between the tap and the words.
-        let description = CATapDescription(monoMixdownOfProcesses: [object])
+        let description = CATapDescription(monoMixdownOfProcesses: objects)
         description.uuid = UUID()
         description.isPrivate = true
 

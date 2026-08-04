@@ -18,10 +18,21 @@ import Foundation
 public final class FloorArbitratedSource: PlaybackSource {
     private let spotify: any PlaybackSource
     private let floor: NowPlayingFloorSource
+    private let followsBrowser: () -> Bool
 
-    public init(spotify: any PlaybackSource, floor: NowPlayingFloorSource) {
+    /// `followsBrowser` decides whether a browser holding the Floor is shown at
+    /// all. It exists for Live Captions: a listener captioning a video is
+    /// reading the words, and does not want the video's title and channel
+    /// taking the Overlay over from the music as well. When it answers false a
+    /// browser is passed over exactly as an unrecognised Owner is.
+    public init(
+        spotify: any PlaybackSource,
+        floor: NowPlayingFloorSource,
+        followsBrowser: @escaping () -> Bool = { true }
+    ) {
         self.spotify = spotify
         self.floor = floor
+        self.followsBrowser = followsBrowser
     }
 
     public func currentState() throws -> PlaybackState {
@@ -35,6 +46,7 @@ public final class FloorArbitratedSource: PlaybackSource {
             return (try? spotify.currentState()) ?? .notRunning
 
         case .browser:
+            guard followsBrowser() else { return .notRunning }
             return (try? floor.currentState()) ?? .notRunning
 
         case .unrecognised, .nobody:

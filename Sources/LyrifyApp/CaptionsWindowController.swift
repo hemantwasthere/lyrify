@@ -34,7 +34,6 @@ final class LiveCaptionsPreference {
 @MainActor
 final class CaptionsWindowController {
     private let window: NSPanel
-    private let scrollView = NSScrollView()
     private let stack = NSStackView()
     private let statusLabel = NSTextField(labelWithString: "")
     private let positionPreference: CaptionsPositionPreference
@@ -42,7 +41,7 @@ final class CaptionsWindowController {
     init() {
         positionPreference = CaptionsPositionPreference()
 
-        let frame = positionPreference.frame ?? Self.defaultFrame()
+        let frame = Self.onScreen(positionPreference.frame) ?? Self.defaultFrame()
         window = NSPanel(
             contentRect: frame,
             styleMask: [.borderless, .nonactivatingPanel, .resizable],
@@ -62,30 +61,28 @@ final class CaptionsWindowController {
 
         let background = CaptionsBackgroundView()
 
+        // The most recent lines, newest at the bottom, sitting on the floor of
+        // the window so they grow upward as they arrive. Scrolling back through
+        // a whole session is a separate concern and a later ticket; a scroll
+        // view here only cost the words their layout.
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
         stack.translatesAutoresizingMaskIntoConstraints = false
-
-        scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = false
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.documentView = stack
 
         statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.alignment = .center
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        background.addSubview(scrollView)
+        background.addSubview(stack)
         background.addSubview(statusLabel)
         NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: background.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: background.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: background.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: background.bottomAnchor),
-            stack.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            stack.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -16),
+            stack.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -14),
+            stack.topAnchor.constraint(
+                greaterThanOrEqualTo: background.topAnchor, constant: 14),
             statusLabel.centerXAnchor.constraint(equalTo: background.centerXAnchor),
             statusLabel.centerYAnchor.constraint(equalTo: background.centerYAnchor),
             statusLabel.leadingAnchor.constraint(
@@ -94,6 +91,21 @@ final class CaptionsWindowController {
 
         window.contentView = background
         observeFrameChanges()
+    }
+
+    /// A remembered frame is only usable if it is somewhere the listener can
+    /// actually see. Displays get unplugged and arrangements change, and a
+    /// window restored onto a screen that is no longer there is invisible while
+    /// behaving perfectly — which is exactly how this first appeared to do
+    /// nothing at all while captioning happily off the edge of the world.
+    private static func onScreen(_ frame: NSRect?) -> NSRect? {
+        guard let frame else { return nil }
+        let visible = NSScreen.screens.contains { screen in
+            // Some of it, not all: a window nudged part-way off an edge is
+            // still reachable.
+            screen.visibleFrame.intersects(frame)
+        }
+        return visible ? frame : nil
     }
 
     private static func defaultFrame() -> NSRect {
@@ -132,14 +144,16 @@ final class CaptionsWindowController {
         if captions.lines.isEmpty {
             statusLabel.stringValue = status ?? ""
             statusLabel.isHidden = false
-            scrollView.isHidden = true
+            stack.isHidden = true
             return
         }
 
         statusLabel.isHidden = true
-        scrollView.isHidden = false
+        stack.isHidden = false
 
-        for line in captions.lines {
+        // Only what fits: the window is small, and the words that matter are
+        // the ones just said.
+        for line in captions.lines.suffix(Self.visibleLines) {
             let label = NSTextField(wrappingLabelWithString: line.text)
             label.font = .systemFont(ofSize: 15, weight: line.isSettled ? .regular : .medium)
             // A line still being revised is dimmer than one the transcriber has
@@ -148,16 +162,14 @@ final class CaptionsWindowController {
             label.textColor = line.isSettled ? .labelColor : .secondaryLabelColor
             label.isSelectable = false
             label.drawsBackground = false
+            label.preferredMaxLayoutWidth = max(stack.bounds.width, 200)
             stack.addArrangedSubview(label)
-            label.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32).isActive = true
-        }
-
-        stack.layoutSubtreeIfNeeded()
-        // Follow along: the newest line is the one worth seeing.
-        if let documentView = scrollView.documentView {
-            documentView.scroll(NSPoint(x: 0, y: documentView.bounds.maxY))
+            label.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
     }
+
+    /// How many lines the window keeps on screen at once.
+    private static let visibleLines = 4
 }
 
 /// Draws the card the captions sit on.

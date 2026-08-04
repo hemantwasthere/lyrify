@@ -30,7 +30,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // already decided it, and the Floor is where that answer is read from.
         // The Anchor stream takes this as a port, so nothing downstream of it
         // knows that more than one Player exists.
-        let players = FloorArbitratedSource(spotify: bridge, floor: floorSource)
+        let liveCaptions = LiveCaptionsController()
+        self.liveCaptions = liveCaptions
+
+        // With Live Captions on, a browser is passed over entirely: the words
+        // are in the captions window, and the video's title and channel have no
+        // business taking the Overlay over from the music as well.
+        let players = FloorArbitratedSource(
+            spotify: bridge,
+            floor: floorSource,
+            followsBrowser: { [weak liveCaptions] in liveCaptions?.isEnabled != true }
+        )
 
         let anchorSource = PlaybackAnchorSource(
             source: players,
@@ -50,9 +60,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return spotify
             }
         )
-        let liveCaptions = LiveCaptionsController()
-        self.liveCaptions = liveCaptions
-
         let lyricsProvider = LyricsProvider(transport: URLSessionLyricsTransport())
         let artworkProvider = ArtworkProvider(transport: URLSessionLyricsTransport())
         let overlayVisibility = OverlayVisibilityPreference()
@@ -80,6 +87,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onMinimizeToDisc: { overlay.collapseToDisc() },
             liveCaptions: liveCaptions
         )
+
+        // Toggling changes what the Players answer, so take a fresh Anchor at
+        // once rather than leaving the Overlay wrong until the next poll.
+        liveCaptions.onToggle = { [weak anchorSource] in anchorSource?.reAnchor() }
 
         // What is captioned is whatever holds the Floor, so the words describe
         // the thing being played rather than everything the machine is making

@@ -22,6 +22,10 @@ final class LiveCaptionsController {
 
     var isEnabled: Bool { preference.isEnabled }
 
+    /// Called after the switch moves, so whatever depends on it can catch up
+    /// without waiting for the next poll.
+    var onToggle: (() -> Void)?
+
     /// Whether this machine can run Live Captions at all.
     static var isSupported: Bool {
         if #available(macOS 26.0, *) { return true }
@@ -43,9 +47,11 @@ final class LiveCaptionsController {
 
         guard enabled, Self.isSupported else {
             stop()
+            onToggle?()
             return
         }
         start()
+        onToggle?()
     }
 
     private func start() {
@@ -82,6 +88,7 @@ final class LiveCaptionsController {
         guard #available(macOS 26.0, *), let engine = engine as? LiveCaptionsEngine else { return }
         window?.update(captions: engine.captions, status: Self.message(for: engine.status))
     }
+
 
     /// What to say when there are no words yet. Each of these is an ordinary
     /// situation rather than a fault, and says what would change it.

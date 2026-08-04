@@ -127,7 +127,7 @@ final class LiveCaptionsEngine {
             // it is not known until it starts.
             nonisolated(unsafe) var converter: AVAudioConverter?
             let tap = ProcessAudioTap()
-            try tap.start(pid: pid) { buffer in
+            try tap.start(owner: pid) { buffer in
                 guard let tapFormat = tap.format else { return }
                 if converter == nil {
                     converter = AVAudioConverter(from: tapFormat, to: analyzerFormat)

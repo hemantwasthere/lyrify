@@ -138,3 +138,32 @@ struct FloorArbitratedSourceTests {
         #expect(try! players.currentState().track?.name == "a video")
     }
 }
+
+extension FloorArbitratedSourceTests {
+    /// Someone captioning a video is reading the words, and does not want its
+    /// title and channel taking the Overlay over from the music as well.
+    @Test("a browser can be passed over entirely when something else is showing it")
+    func browserCanBeIgnored() {
+        let spotify = FakeSpotify()
+        let floor = NowPlayingFloorSource()
+        floor.receive(reading("com.google.Chrome", title: "a video"))
+
+        let players = FloorArbitratedSource(
+            spotify: spotify, floor: floor, followsBrowser: { false })
+        #expect(try! players.currentState() == .notRunning)
+    }
+
+    /// Passing the browser over must not cost Spotify anything: it is still
+    /// followed whenever it holds the Floor.
+    @Test("passing the browser over leaves Spotify followed as usual")
+    func ignoringTheBrowserLeavesSpotifyAlone() {
+        let spotify = FakeSpotify()
+        spotify.state = .playing(Self.song, position: 5)
+        let floor = NowPlayingFloorSource()
+        floor.receive(reading("com.spotify.client", title: "Sesame Syrup"))
+
+        let players = FloorArbitratedSource(
+            spotify: spotify, floor: floor, followsBrowser: { false })
+        #expect(try! players.currentState().track?.name == "Sesame Syrup")
+    }
+}

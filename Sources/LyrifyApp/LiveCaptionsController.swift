@@ -53,8 +53,17 @@ final class LiveCaptionsController {
             return
         }
         preference.hasBeenExplained = true
-        preference.isEnabled = true
 
+        // The permission is a gate, not a footnote. Without it there is nothing
+        // to caption, so switching on regardless would leave the option looking
+        // on while the window sat there saying it could not work.
+        guard #available(macOS 14.2, *), ProcessAudioTap.hasPermission() else {
+            preference.isEnabled = false
+            Self.explainRefusal()
+            return
+        }
+
+        preference.isEnabled = true
         start()
     }
 
@@ -87,6 +96,31 @@ final class LiveCaptionsController {
         // opens behind whatever is in front and looks like nothing happened.
         NSApp.activate(ignoringOtherApps: true)
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// Said when macOS was asked and said no. Names where to change it, and
+    /// leaves Live Captions off — an option that cannot work should not look
+    /// switched on.
+    private static func explainRefusal() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Live Captions needs permission to hear audio"
+        alert.informativeText = [
+            "Without it there is nothing to caption, so Live Captions has stayed off.",
+            "You can grant it in System Settings → Privacy & Security → System Audio"
+                + " Recording, then switch Live Captions on again.",
+        ].joined(separator: "\n\n")
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Not Now")
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        if let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture")
+        {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func start() {

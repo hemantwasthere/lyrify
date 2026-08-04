@@ -33,14 +33,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let liveCaptions = LiveCaptionsController()
         self.liveCaptions = liveCaptions
 
-        // With Live Captions on, a browser is passed over entirely: the words
-        // are in the captions window, and the video's title and channel have no
-        // business taking the Overlay over from the music as well.
-        let players = FloorArbitratedSource(
-            spotify: bridge,
-            floor: floorSource,
-            followsBrowser: { [weak liveCaptions] in liveCaptions?.isEnabled != true }
-        )
+        // The Overlay follows Spotify and nothing else. What a browser plays
+        // is captioned in its own window; it never appears where the music is.
+        let players = FloorArbitratedSource(spotify: bridge, floor: floorSource)
 
         let anchorSource = PlaybackAnchorSource(
             source: players,
@@ -87,10 +82,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onMinimizeToDisc: { overlay.collapseToDisc() },
             liveCaptions: liveCaptions
         )
-
-        // Toggling changes what the Players answer, so take a fresh Anchor at
-        // once rather than leaving the Overlay wrong until the next poll.
-        liveCaptions.onToggle = { [weak anchorSource] in anchorSource?.reAnchor() }
 
         // What is captioned is whatever holds the Floor, so the words describe
         // the thing being played rather than everything the machine is making

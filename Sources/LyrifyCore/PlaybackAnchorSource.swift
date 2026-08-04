@@ -81,11 +81,6 @@ public final class PlaybackAnchorSource {
         }
     }
 
-    /// Takes a fresh Anchor now rather than waiting for the next re-anchor.
-    /// For a change that alters what the Players answer — Live Captions being
-    /// switched on — where waiting ten seconds would look broken.
-    public func reAnchor() { poll() }
-
     private func poll() {
         let observed: PlaybackState
         do {

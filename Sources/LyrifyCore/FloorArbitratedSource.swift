@@ -1,12 +1,18 @@
 import Foundation
 
-/// Both Players behind one port, routed by whoever holds the Now Playing Floor.
+/// What the Overlay shows, which is Spotify and nothing else.
 ///
-/// The Floor says *who*; that Player says *what*. Spotify is asked over its own
-/// bridge rather than read from the Floor, because the Floor does not carry the
-/// URI that keys lyrics memoisation, the album the first widening step Matches
-/// on, or anything that could drive its transport — the Floor is consulted only
-/// for ownership, never as a replacement for Spotify's own reporting.
+/// The Floor is read to know who owns playback, but the answer only ever
+/// decides whether Spotify is shown or nothing is. A browser holding the Floor
+/// is not shown here at all — what it plays has no title, artist or artwork
+/// worth putting where the music goes, and pasting a video's name under an
+/// album cover made both look wrong. Browser audio is captioned in its own
+/// window instead.
+///
+/// Spotify is asked over its own bridge rather than read from the Floor,
+/// because the Floor does not carry the URI that keys lyrics memoisation, the
+/// album the first widening step Matches on, or anything that could drive its
+/// transport.
 ///
 /// Nothing downstream of the port changes: the Anchor stream, the estimated
 /// Playback Position, the menu bar title and the Overlay all see one
@@ -18,23 +24,10 @@ import Foundation
 public final class FloorArbitratedSource: PlaybackSource {
     private let spotify: any PlaybackSource
     private let floor: NowPlayingFloorSource
-    private let followsBrowser: () -> Bool
 
-    /// `followsBrowser` decides whether a browser holding the Floor is shown at
-    /// all. It exists for Live Captions: a listener captioning a video is
-    /// reading the words, and does not want the video's title and channel
-    /// taking the Overlay over from the music as well. When it answers false
-    /// the Overlay keeps showing Spotify — the Track someone had up stays up,
-    /// paused or playing, rather than being cleared by a video starting
-    /// somewhere else.
-    public init(
-        spotify: any PlaybackSource,
-        floor: NowPlayingFloorSource,
-        followsBrowser: @escaping () -> Bool = { true }
-    ) {
+    public init(spotify: any PlaybackSource, floor: NowPlayingFloorSource) {
         self.spotify = spotify
         self.floor = floor
-        self.followsBrowser = followsBrowser
     }
 
     public func currentState() throws -> PlaybackState {
@@ -48,14 +41,27 @@ public final class FloorArbitratedSource: PlaybackSource {
             return (try? spotify.currentState()) ?? .notRunning
 
         case .browser:
-            // Passing the browser over is not the same as nothing playing.
-            // Spotify is usually still there with a Track loaded, and blanking
-            // the Overlay would take away the artwork and lyrics someone was
-            // reading a moment ago just because a video started elsewhere.
-            guard followsBrowser() else { return (try? spotify.currentState()) ?? .notRunning }
-            return (try? floor.currentState()) ?? .notRunning
+            // The Overlay is Spotify's, and only Spotify's. A video playing
+            // elsewhere neither replaces the music nor clears it: the Track
+            // someone had up stays up, artwork and lyrics and all.
+            //
+            // A browser is still followed — just not here. What it is playing
+            // is captioned in its own window, which is the only place anything
+            // about it belongs.
+            return (try? spotify.currentState()) ?? .notRunning
 
-        case .unrecognised, .nobody:
+        case .nobody:
+            // An empty Floor is not proof that nothing is playing. Spotify has
+            // been observed playing without publishing to it, and the adapter
+            // that reads it can fail to start or die at any time — it is a
+            // workaround for a restriction Apple imposed once and could impose
+            // again. Asking Spotify anyway is what keeps this dependency from
+            // ever being able to break Spotify support.
+            return (try? spotify.currentState()) ?? .notRunning
+
+        case .unrecognised:
+            // Something else genuinely owns playback. Showing Spotify's Track
+            // over the top of it would be a wrong answer, not a missing one.
             return .notRunning
         }
     }

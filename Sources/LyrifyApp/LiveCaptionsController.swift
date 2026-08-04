@@ -22,10 +22,6 @@ final class LiveCaptionsController {
 
     var isEnabled: Bool { preference.isEnabled }
 
-    /// Called after the switch moves, so whatever depends on it can catch up
-    /// without waiting for the next poll.
-    var onToggle: (() -> Void)?
-
     /// Whether this machine can run Live Captions at all.
     static var isSupported: Bool {
         if #available(macOS 26.0, *) { return true }
@@ -46,7 +42,6 @@ final class LiveCaptionsController {
         guard enabled, Self.isSupported else {
             preference.isEnabled = false
             stop()
-            onToggle?()
             return
         }
 
@@ -55,14 +50,12 @@ final class LiveCaptionsController {
         // agreeing to. Declining here leaves everything exactly as it was.
         guard preference.hasBeenExplained || Self.explainAndAsk() else {
             preference.isEnabled = false
-            onToggle?()
             return
         }
         preference.hasBeenExplained = true
         preference.isEnabled = true
 
         start()
-        onToggle?()
     }
 
     /// Explains what turning this on means, and answers whether to go ahead.

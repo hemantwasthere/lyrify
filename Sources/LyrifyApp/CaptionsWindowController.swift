@@ -18,6 +18,15 @@ final class LiveCaptionsPreference {
         get { defaults.bool(forKey: Self.key) }
         set { defaults.set(newValue, forKey: Self.key) }
     }
+
+    /// Whether the listener has been told what this costs. Explaining once is
+    /// enough; explaining every time is nagging.
+    var hasBeenExplained: Bool {
+        get { defaults.bool(forKey: Self.explainedKey) }
+        set { defaults.set(newValue, forKey: Self.explainedKey) }
+    }
+
+    private static let explainedKey = "LiveCaptionsExplained"
 }
 
 /// The captions window: what is being said, and nothing else.

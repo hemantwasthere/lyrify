@@ -43,15 +43,57 @@ final class LiveCaptionsController {
     }
 
     func setEnabled(_ enabled: Bool) {
-        preference.isEnabled = enabled && Self.isSupported
-
         guard enabled, Self.isSupported else {
+            preference.isEnabled = false
             stop()
             onToggle?()
             return
         }
+
+        // Said before macOS asks, not after: the system dialog is one sentence
+        // and a pair of buttons, which is no place to learn what you are
+        // agreeing to. Declining here leaves everything exactly as it was.
+        guard preference.hasBeenExplained || Self.explainAndAsk() else {
+            preference.isEnabled = false
+            onToggle?()
+            return
+        }
+        preference.hasBeenExplained = true
+        preference.isEnabled = true
+
         start()
         onToggle?()
+    }
+
+    /// Explains what turning this on means, and answers whether to go ahead.
+    ///
+    /// Deliberately says the awkward part out loud — that it follows whatever
+    /// is playing, including something the listener did not have in mind — and
+    /// says how to stop it. Someone who reads this and declines should feel
+    /// they were told the truth rather than sold something.
+    private static func explainAndAsk() -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Turn on Live Captions?"
+        alert.informativeText = [
+            "Lyrify will listen to the one app that is currently playing, and show what"
+                + " it is saying in a window of its own.",
+            "Everything is transcribed on your Mac. No audio and no text is sent anywhere,"
+                + " and nothing is written to disk. macOS shows an indicator in the menu bar"
+                + " the whole time it is listening.",
+            "It follows whatever is playing, so if you switch to something private it hears"
+                + " that too. Turning Live Captions off stops it, and you can take the"
+                + " permission back at any time in System Settings.",
+            "macOS will ask for permission to record system audio next.",
+        ].joined(separator: "\n\n")
+
+        alert.addButton(withTitle: "Turn On")
+        alert.addButton(withTitle: "Not Now")
+
+        // A menu bar agent is never the active app, so without this the alert
+        // opens behind whatever is in front and looks like nothing happened.
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     private func start() {

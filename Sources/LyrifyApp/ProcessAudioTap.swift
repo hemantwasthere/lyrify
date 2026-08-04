@@ -143,3 +143,32 @@ final class ProcessAudioTap: @unchecked Sendable {
 
     deinit { stop() }
 }
+
+@available(macOS 14.2, *)
+extension ProcessAudioTap {
+    /// Asks macOS for permission to record system audio, and answers whether it
+    /// was given.
+    ///
+    /// Asks by *trying*: there is no public way to read this permission's state,
+    /// so the only honest question is whether a tap can be made.
+    ///
+    /// The tap is described globally rather than over an empty list of
+    /// processes. An empty mixdown captures nothing by construction, and macOS
+    /// lets it through without asking — which made the first version of this
+    /// answer yes to a listener who had just said no. Nothing is ever captured
+    /// through it regardless: no device is built behind it and no IO proc is
+    /// attached, and it is destroyed on the next line.
+    static func hasPermission() -> Bool {
+        let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+        description.uuid = UUID()
+        description.isPrivate = true
+
+        var tapID = AudioObjectID(kAudioObjectUnknown)
+        let status = AudioHardwareCreateProcessTap(description, &tapID)
+
+        if tapID != kAudioObjectUnknown {
+            AudioHardwareDestroyProcessTap(tapID)
+        }
+        return status == noErr
+    }
+}

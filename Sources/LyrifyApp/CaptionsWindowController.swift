@@ -80,9 +80,10 @@ final class CaptionsWindowController {
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 16),
             stack.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -16),
-            stack.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -14),
+            stack.bottomAnchor.constraint(
+                equalTo: background.bottomAnchor, constant: -Self.verticalInset),
             stack.topAnchor.constraint(
-                greaterThanOrEqualTo: background.topAnchor, constant: 14),
+                greaterThanOrEqualTo: background.topAnchor, constant: Self.verticalInset),
             statusLabel.centerXAnchor.constraint(equalTo: background.centerXAnchor),
             statusLabel.centerYAnchor.constraint(equalTo: background.centerYAnchor),
             statusLabel.leadingAnchor.constraint(
@@ -151,9 +152,11 @@ final class CaptionsWindowController {
         statusLabel.isHidden = true
         stack.isHidden = false
 
-        // Only what fits: the window is small, and the words that matter are
-        // the ones just said.
-        for line in captions.lines.suffix(Self.visibleLines) {
+        // As many as the window has room for. A fixed count left a tall window
+        // mostly empty above the words, which reads as a layout mistake rather
+        // than as breathing room — and a taller window should show more of what
+        // was said, not more nothing.
+        for line in captions.lines.suffix(visibleLineCount) {
             let label = NSTextField(wrappingLabelWithString: line.text)
             label.font = .systemFont(ofSize: 15, weight: line.isSettled ? .regular : .medium)
             // A line still being revised is dimmer than one the transcriber has
@@ -168,8 +171,20 @@ final class CaptionsWindowController {
         }
     }
 
-    /// How many lines the window keeps on screen at once.
-    private static let visibleLines = 4
+    /// How many lines the window has room for.
+    ///
+    /// Estimated from its height rather than fixed, so growing the window fills
+    /// it with more of what was said. Deliberately generous about wrapping: a
+    /// long sentence takes two rows, so this errs toward slightly too few
+    /// rather than overflowing the top.
+    private var visibleLineCount: Int {
+        let available = (window.contentView?.bounds.height ?? 200) - Self.verticalInset * 2
+        return max(1, Int(available / Self.approximateLineHeight))
+    }
+
+    /// One row of text plus the gap beneath it, near enough.
+    private static let approximateLineHeight: CGFloat = 27
+    private static let verticalInset: CGFloat = 14
 }
 
 /// Draws the card the captions sit on.

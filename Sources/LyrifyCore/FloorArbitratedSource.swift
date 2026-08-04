@@ -23,8 +23,10 @@ public final class FloorArbitratedSource: PlaybackSource {
     /// `followsBrowser` decides whether a browser holding the Floor is shown at
     /// all. It exists for Live Captions: a listener captioning a video is
     /// reading the words, and does not want the video's title and channel
-    /// taking the Overlay over from the music as well. When it answers false a
-    /// browser is passed over exactly as an unrecognised Owner is.
+    /// taking the Overlay over from the music as well. When it answers false
+    /// the Overlay keeps showing Spotify — the Track someone had up stays up,
+    /// paused or playing, rather than being cleared by a video starting
+    /// somewhere else.
     public init(
         spotify: any PlaybackSource,
         floor: NowPlayingFloorSource,
@@ -46,7 +48,11 @@ public final class FloorArbitratedSource: PlaybackSource {
             return (try? spotify.currentState()) ?? .notRunning
 
         case .browser:
-            guard followsBrowser() else { return .notRunning }
+            // Passing the browser over is not the same as nothing playing.
+            // Spotify is usually still there with a Track loaded, and blanking
+            // the Overlay would take away the artwork and lyrics someone was
+            // reading a moment ago just because a video started elsewhere.
+            guard followsBrowser() else { return (try? spotify.currentState()) ?? .notRunning }
             return (try? floor.currentState()) ?? .notRunning
 
         case .unrecognised, .nobody:

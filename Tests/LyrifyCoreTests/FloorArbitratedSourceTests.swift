@@ -153,6 +153,29 @@ extension FloorArbitratedSourceTests {
         #expect(try! players.currentState() == .notRunning)
     }
 
+    /// Passing the browser over must not clear what was already up. Someone
+    /// captioning a video still has their music paused behind it, with its
+    /// artwork and its lyrics, and a video starting elsewhere is no reason to
+    /// take that away.
+    @Test("a passed-over browser leaves a paused Spotify Track on screen")
+    func passingOverTheBrowserKeepsSpotifysTrack() {
+        let spotify = FakeSpotify()
+        spotify.state = .paused(Self.song, position: 120)
+        let floor = NowPlayingFloorSource()
+        floor.receive(reading("com.google.Chrome", title: "a video"))
+
+        let players = FloorArbitratedSource(
+            spotify: spotify, floor: floor, followsBrowser: { false })
+
+        guard case .paused(let track, let position) = try! players.currentState() else {
+            Issue.record("expected Spotify's paused Track to survive")
+            return
+        }
+        #expect(track.name == "Sesame Syrup")
+        #expect(track.album == "Crush")
+        #expect(position == 120)
+    }
+
     /// Passing the browser over must not cost Spotify anything: it is still
     /// followed whenever it holds the Floor.
     @Test("passing the browser over leaves Spotify followed as usual")

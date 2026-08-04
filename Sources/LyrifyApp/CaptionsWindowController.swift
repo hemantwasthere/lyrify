@@ -34,6 +34,7 @@ final class LiveCaptionsPreference {
 @MainActor
 final class CaptionsWindowController {
     private let window: NSPanel
+    private let scrollView = NSScrollView()
     private let stack = NSStackView()
     private let statusLabel = NSTextField(labelWithString: "")
     private let resizer = WindowResizer()
@@ -68,14 +69,25 @@ final class CaptionsWindowController {
 
         let background = CaptionsBackgroundView()
 
-        // The most recent lines, newest at the bottom, sitting on the floor of
-        // the window so they grow upward as they arrive. Scrolling back through
-        // a whole session is a separate concern and a later ticket; a scroll
-        // view here only cost the words their layout.
+        // Newest at the bottom, everything said still above it. The clip view
+        // is flipped so the first line sits at the top and the feed reads
+        // downward; unflipped, a short session floats in the middle of nowhere.
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false
+
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        let clipView = FlippedClipView()
+        // The clip view paints its own background even when the scroll view is
+        // told not to, which showed as a lighter panel sitting on the card.
+        clipView.drawsBackground = false
+        scrollView.contentView = clipView
+        scrollView.documentView = stack
 
         statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabelColor
@@ -92,18 +104,27 @@ final class CaptionsWindowController {
             self.positionPreference.frame = self.window.frame
         }
 
-        background.addSubview(stack)
+        background.addSubview(scrollView)
         background.addSubview(statusLabel)
         background.addSubview(resizer)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(
+            scrollView.leadingAnchor.constraint(
                 equalTo: background.leadingAnchor, constant: Self.horizontalInset),
-            stack.trailingAnchor.constraint(
+            scrollView.trailingAnchor.constraint(
                 equalTo: background.trailingAnchor, constant: -Self.horizontalInset),
-            stack.bottomAnchor.constraint(
+            scrollView.topAnchor.constraint(
+                equalTo: background.topAnchor, constant: Self.verticalInset),
+            scrollView.bottomAnchor.constraint(
                 equalTo: background.bottomAnchor, constant: -Self.verticalInset),
-            stack.topAnchor.constraint(
-                greaterThanOrEqualTo: background.topAnchor, constant: Self.verticalInset),
+
+            // The document is pinned to the clip view and matches its width, so
+            // its height is whatever the words need — which is what makes the
+            // thing scroll at all. Getting this wrong is why the first attempt
+            // laid out to nothing.
+            stack.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            stack.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
             statusLabel.centerXAnchor.constraint(equalTo: background.centerXAnchor),
             statusLabel.centerYAnchor.constraint(equalTo: background.centerYAnchor),
             statusLabel.leadingAnchor.constraint(
@@ -173,18 +194,21 @@ final class CaptionsWindowController {
         if captions.lines.isEmpty {
             statusLabel.stringValue = status ?? ""
             statusLabel.isHidden = false
-            stack.isHidden = true
+            scrollView.isHidden = true
             return
         }
 
         statusLabel.isHidden = true
-        stack.isHidden = false
+        scrollView.isHidden = false
 
-        // As many as the window has room for. A fixed count left a tall window
-        // mostly empty above the words, which reads as a layout mistake rather
-        // than as breathing room — and a taller window should show more of what
-        // was said, not more nothing.
-        for line in captions.lines.suffix(Self.lineCap) {
+        // Whether the reader was following along. Asked before the rebuild,
+        // because afterwards the answer is always yes.
+        let wasFollowing = isScrolledToBottom
+
+        // Everything retained, not a fixed few: what does not fit is scrolled
+        // back to rather than thrown away, and a taller window simply shows
+        // more of it.
+        for line in captions.lines {
             let label = NSTextField(wrappingLabelWithString: line.text)
             label.font = .systemFont(ofSize: 15, weight: line.isSettled ? .regular : .medium)
             // A line still being revised is dimmer than one the transcriber has
@@ -200,6 +224,28 @@ final class CaptionsWindowController {
         }
 
         growToFitContent()
+
+        // Follow along only for a reader who was already at the bottom. Someone
+        // who has scrolled back to catch a line is reading it, and yanking them
+        // to the newest word every time one arrives would make that impossible.
+        if wasFollowing { scrollToBottom() }
+    }
+
+    /// Whether the newest line is on screen — which is what "following along"
+    /// means here.
+    private var isScrolledToBottom: Bool {
+        guard let documentView = scrollView.documentView else { return true }
+        let visible = scrollView.contentView.bounds
+        // A little slack, so a pixel of drift does not count as having left.
+        return visible.maxY >= documentView.bounds.height - 4
+    }
+
+    private func scrollToBottom() {
+        guard let documentView = scrollView.documentView else { return }
+        stack.layoutSubtreeIfNeeded()
+        let y = max(0, documentView.bounds.height - scrollView.contentView.bounds.height)
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: y))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     /// Grows the window to hold what is on screen, and stops.
@@ -215,9 +261,11 @@ final class CaptionsWindowController {
         guard isSizedByListener == false else { return }
 
         stack.layoutSubtreeIfNeeded()
-        let wanted = max(
-            Self.minimumSize.height,
-            stack.fittingSize.height + Self.verticalInset * 2)
+        let ceiling =
+            Self.approximateLineHeight * CGFloat(Self.growthLineCap) + Self.verticalInset * 2
+        let wanted = min(
+            ceiling,
+            max(Self.minimumSize.height, stack.fittingSize.height + Self.verticalInset * 2))
         guard abs(wanted - window.frame.height) > 1 else { return }
 
         // Grows upward: the newest line stays where the eye already is.
@@ -227,13 +275,23 @@ final class CaptionsWindowController {
         window.setFrame(frame, display: true)
     }
 
-    /// The most captions kept on screen at once. Past this the oldest drops
-    /// off rather than the window growing without end — four is enough to
-    /// follow a thought without becoming a wall of text.
-    private static let lineCap = 4
+    /// How tall the window is allowed to grow on its own, as a count of lines.
+    /// Past this it stops growing and the older words scroll out of sight
+    /// rather than the window eating the screen — the reader can drag it taller
+    /// if they want more, and scroll back either way.
+    private static let growthLineCap = 4
+    private static let approximateLineHeight: CGFloat = 27
 
     private static let verticalInset: CGFloat = 14
     private static let horizontalInset: CGFloat = 16
+}
+
+/// A clip view that puts its content at the top rather than the bottom.
+///
+/// AppKit's is unflipped, which for a feed shorter than its window leaves the
+/// words floating in the middle of nowhere.
+final class FlippedClipView: NSClipView {
+    override var isFlipped: Bool { true }
 }
 
 /// Draws the card the captions sit on.

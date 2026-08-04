@@ -27,5 +27,9 @@
 	     the app instead of prompting. -->
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Lyrify reads the currently playing track from Spotify so it can show synced lyrics.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Lyrify listens to the app that is currently playing so it can show live captions of what is being said. Audio is transcribed on your Mac and is never recorded or sent anywhere.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Lyrify turns the audio of whatever is playing into live captions. Speech recognition runs entirely on your Mac.</string>
 </dict>
 </plist>

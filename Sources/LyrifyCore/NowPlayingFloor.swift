@@ -27,6 +27,7 @@ public struct NowPlayingFloor: Equatable, Sendable {
 
     private var bundleIdentifier: String?
     private var parentBundleIdentifier: String?
+    private var processIdentifier: Int?
     private var title: String?
     private var artist: String?
     private var duration: TimeInterval?
@@ -46,6 +47,14 @@ public struct NowPlayingFloor: Equatable, Sendable {
     /// process. Absent in every reading observed so far; kept because the
     /// adapter documents it and consulting it costs nothing.
     public var holderParent: String? { parentBundleIdentifier }
+
+    /// The process actually making the sound.
+    ///
+    /// Exposed because captioning taps a *process*, not the machine: a global
+    /// tap hears every source at once and stitches unrelated audio into one
+    /// confident, wrong sentence. See
+    /// `docs/findings/2026-08-03-system-audio-captions.md`.
+    public var holderProcess: Int? { processIdentifier }
 
     /// Merges one reading into the snapshot.
     ///
@@ -97,6 +106,9 @@ public struct NowPlayingFloor: Equatable, Sendable {
         if let value = fields["bundleIdentifier"] { bundleIdentifier = value as? String }
         if let value = fields["parentApplicationBundleIdentifier"] {
             parentBundleIdentifier = value as? String
+        }
+        if let value = fields["processIdentifier"] {
+            processIdentifier = (value as? NSNumber)?.intValue
         }
         if let value = fields["title"] { title = value as? String }
         if let value = fields["artist"] { artist = value as? String }

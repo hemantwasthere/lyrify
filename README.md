@@ -6,9 +6,10 @@
 
 **Lyrics that keep up with the music.**
 
-A menu-bar companion for Spotify on macOS that floats a small, time-synced
-lyrics overlay over whatever you're doing — and follows you across every
-desktop and every fullscreen window.
+A menu-bar companion for macOS that floats a small, time-synced lyrics overlay
+over whatever you're doing — and follows you across every desktop and every
+fullscreen window. It follows Spotify and your browser, and it can caption what
+you're watching.
 
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-201c15?style=flat-square)](https://www.apple.com/macos/)
 [![Swift 6](https://img.shields.io/badge/Swift-6-a86419?style=flat-square)](https://swift.org)
@@ -43,20 +44,64 @@ desktop and every fullscreen window.
   red close dot does. No dock icon, no clutter.
 - **Remembers itself.** Position, size, whether it's expanded, and whether the
   artwork tints the panel all survive a restart.
+- **Follows your browser too.** A music video playing in any browser gets the
+  same synced lyrics, with nothing to install and nothing to allow.
+- **Live Captions.** Optional, off by default: turn it on and a separate window
+  shows what the thing you're playing is saying, transcribed on your Mac.
 
 ## Requirements
 
 | | |
 |---|---|
-| **macOS** | 14 Sonoma or later |
+| **macOS** | 14 Sonoma or later — **26 or later** for Live Captions |
 | **Architecture** | Apple Silicon & Intel |
-| **Spotify** | The desktop client, installed and running |
+| **Spotify** | The desktop client, for Spotify lyrics |
+| **Browser** | Any — no extension, no setting to change |
 | **Network** | Lyrics are fetched from [LRCLIB](https://lrclib.net) |
 
+### What each part needs
+
+| | Permission | Why |
+|---|---|---|
+| **Spotify lyrics** | Automation → Spotify | Reading what's playing over Apple Events |
+| **Browser lyrics** | *None* | macOS already publishes what's playing; Lyrify only reads it |
+| **Live Captions** | System Audio Recording | Hearing the app that's playing, to transcribe it |
+
 Lyrify reads playback state from the Spotify desktop app over Apple Events. It
-does **not** use the Spotify Web API, so there is no account to connect, no
-token to manage, and nothing leaves your machine except an anonymous lyrics
-lookup by track title, artist, album and duration.
+does **not** use the Spotify Web API, so there is no account to connect and no
+token to manage. The only thing that leaves your machine is an anonymous lyrics
+lookup by track title, artist, album and duration — for browser videos, without
+even the album.
+
+## Live Captions, and what it costs
+
+It is **off until you turn it on**. Nothing is captured, nothing is
+transcribed, and macOS never asks you for anything until you switch it on from
+the menu bar. Lyrify explains what it's about to ask for before the system
+dialog appears, and you can decline and stay where you were.
+
+Switched on, Lyrify listens to **the one application currently playing** — the
+same one macOS shows in Control Center — and not to the rest of your machine.
+It does not hear your calls, your meetings, or another app playing alongside.
+That is a deliberate choice: an earlier version listened to everything and
+promptly stitched an unrelated conversation into a caption of a video, which
+was both wrong and more than it had any business hearing.
+
+What protects you, concretely:
+
+- **Off by default**, and switched off it captures nothing at all.
+- **Transcribed on your Mac.** Apple's on-device speech model. No audio and no
+  text is sent anywhere, by Lyrify or by anything it uses.
+- **Nothing is written to disk.** Captions live in the window while it's open
+  and are forgotten when you turn it off.
+- **macOS shows an indicator** in the menu bar the whole time it is listening.
+- **Revocable at any moment** in System Settings → Privacy & Security → System
+  Audio Recording.
+
+The honest limit of that: while it's on, Lyrify hears whatever the playing
+application plays. If that application is a browser and you switch to a private
+video, it hears that too — it follows what's playing, not what you meant.
+Turning Live Captions off is the way to stop it, and it takes one click.
 
 ## Install
 

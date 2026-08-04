@@ -1,12 +1,18 @@
 import Foundation
 
-/// Both Players behind one port, routed by whoever holds the Now Playing Floor.
+/// What the Overlay shows, which is Spotify and nothing else.
 ///
-/// The Floor says *who*; that Player says *what*. Spotify is asked over its own
-/// bridge rather than read from the Floor, because the Floor does not carry the
-/// URI that keys lyrics memoisation, the album the first widening step Matches
-/// on, or anything that could drive its transport — the Floor is consulted only
-/// for ownership, never as a replacement for Spotify's own reporting.
+/// The Floor is read to know who owns playback, but the answer only ever
+/// decides whether Spotify is shown or nothing is. A browser holding the Floor
+/// is not shown here at all — what it plays has no title, artist or artwork
+/// worth putting where the music goes, and pasting a video's name under an
+/// album cover made both look wrong. Browser audio is captioned in its own
+/// window instead.
+///
+/// Spotify is asked over its own bridge rather than read from the Floor,
+/// because the Floor does not carry the URI that keys lyrics memoisation, the
+/// album the first widening step Matches on, or anything that could drive its
+/// transport.
 ///
 /// Nothing downstream of the port changes: the Anchor stream, the estimated
 /// Playback Position, the menu bar title and the Overlay all see one
@@ -35,16 +41,23 @@ public final class FloorArbitratedSource: PlaybackSource {
             return (try? spotify.currentState()) ?? .notRunning
 
         case .browser:
-            return (try? floor.currentState()) ?? .notRunning
+            // The Overlay is Spotify's, and only Spotify's. A video playing
+            // elsewhere neither replaces the music nor clears it: the Track
+            // someone had up stays up, artwork and lyrics and all.
+            //
+            // A browser is still followed — just not here. What it is playing
+            // is captioned in its own window, which is the only place anything
+            // about it belongs.
+            return (try? spotify.currentState()) ?? .notRunning
 
         case .nobody:
             // An empty Floor is not proof that nothing is playing. Spotify has
             // been observed playing without publishing to it, and the adapter
             // that reads it can fail to start or die at any time — it is a
             // workaround for a restriction Apple imposed once and could impose
-            // again. Falling back to asking Spotify directly is what keeps this
-            // dependency from ever being able to break Spotify support, which
-            // is a rule the browser path is not allowed to bend.
+            // again. Asking Spotify anyway is what keeps this dependency from
+            // ever being able to break Spotify support, which is a rule the
+            // browser path is not allowed to bend.
             return (try? spotify.currentState()) ?? .notRunning
 
         case .unrecognised:

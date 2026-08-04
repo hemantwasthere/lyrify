@@ -24,6 +24,8 @@ final class MenuBarController {
 
     /// Held for the same reason.
     private var minimizeTarget: MenuActionTarget?
+    private var liveCaptionsTarget: MenuActionTarget?
+    private var liveCaptionsItem: NSMenuItem?
 
     /// The Track URI the lookup outcome on display belongs to. A completed
     /// lookup is applied only if this still matches — a slow answer for an
@@ -58,7 +60,8 @@ final class MenuBarController {
         lyricsProvider: LyricsProvider,
         overlayVisibility: OverlayVisibilityPreference,
         onVisibilityChange: @escaping () -> Void,
-        onMinimizeToDisc: @escaping () -> Void
+        onMinimizeToDisc: @escaping () -> Void,
+        liveCaptions: LiveCaptionsController
     ) {
         self.lyricsProvider = lyricsProvider
         // Square rather than variable: the content is one fixed-width icon, and
@@ -70,7 +73,8 @@ final class MenuBarController {
         buildMenu(
             overlayVisibility: overlayVisibility,
             onVisibilityChange: onVisibilityChange,
-            onMinimizeToDisc: onMinimizeToDisc
+            onMinimizeToDisc: onMinimizeToDisc,
+            liveCaptions: liveCaptions
         )
         anchorSource.onAnchor { [weak self] state in
             self?.reconcileLookup(with: state)
@@ -86,7 +90,8 @@ final class MenuBarController {
     private func buildMenu(
         overlayVisibility: OverlayVisibilityPreference,
         onVisibilityChange: @escaping () -> Void,
-        onMinimizeToDisc: @escaping () -> Void
+        onMinimizeToDisc: @escaping () -> Void,
+        liveCaptions: LiveCaptionsController
     ) {
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -114,6 +119,27 @@ final class MenuBarController {
         let minimize = NSMenuItem(title: "Minimize to Disc", action: #selector(MenuActionTarget.fire), keyEquivalent: "")
         minimize.target = minimizeTarget
         menu.addItem(minimize)
+
+        // Off until asked for, and absent entirely where it cannot work — an
+        // option that does nothing is worse than no option.
+        let captionsTarget = MenuActionTarget { [weak self] in
+            guard let item = self?.liveCaptionsItem else { return }
+            let turningOn = item.state != .on
+            liveCaptions.setEnabled(turningOn)
+            item.state = liveCaptions.isEnabled ? .on : .off
+        }
+        self.liveCaptionsTarget = captionsTarget
+
+        let captions = NSMenuItem(
+            title: "Live Captions", action: #selector(MenuActionTarget.fire), keyEquivalent: "")
+        captions.target = captionsTarget
+        captions.state = liveCaptions.isEnabled ? .on : .off
+        if LiveCaptionsController.isSupported == false {
+            captions.isEnabled = false
+            captions.toolTip = "Live Captions needs macOS 26 or later."
+        }
+        menu.addItem(captions)
+        liveCaptionsItem = captions
 
         menu.addItem(.separator())
         menu.addItem(

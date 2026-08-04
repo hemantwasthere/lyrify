@@ -3,8 +3,8 @@ import Testing
 
 @testable import LyrifyCore
 
-/// Both Players behind one port. Spotify is a fake; the browser is the real
-/// Floor source fed lines, because that is how it behaves in the app.
+/// What the Overlay shows. Spotify is a fake; the browser is the real Floor
+/// source fed lines, because that is how it behaves in the app.
 @Suite("Floor arbitrated source")
 @MainActor
 struct FloorArbitratedSourceTests {
@@ -60,52 +60,71 @@ struct FloorArbitratedSourceTests {
         #expect(spotify.asked == 1)
     }
 
-    /// Even with Spotify running and holding a Track, the browser wins once it
-    /// takes the Floor — that is the whole point of following the system's
-    /// answer rather than preferring one Player.
-    @Test("a browser taking the Floor is followed even while Spotify is running")
-    func browserTakesTheFloorFromSpotify() {
+    /// A video has no title, artist or artwork worth putting where the music
+    /// goes. Showing one there put a video's name under an album cover, which
+    /// made both look wrong; what a browser plays is captioned in its own
+    /// window instead.
+    @Test("a browser holding the Floor is never shown here")
+    func browserIsNeverShown() {
         let spotify = FakeSpotify()
-        spotify.state = .paused(Self.song, position: 30)
         let floor = NowPlayingFloorSource()
         floor.receive(reading("com.google.Chrome", title: "a video"))
 
-        let state = try! players(spotify, floor).currentState()
-        #expect(state.track?.name == "a video")
-        // Spotify is not even consulted: it does not hold the Floor.
-        #expect(spotify.asked == 0)
+        #expect(try! players(spotify, floor).currentState() == .notRunning)
     }
 
-    /// The Floor moving back is all it takes; no user action, no preference.
-    @Test("the Floor moving back to Spotify moves the answer back")
-    func floorMovesBack() {
+    /// And it does not clear the music either. Someone who paused a song and
+    /// started a video still has their Track, its artwork and its lyrics.
+    @Test("a browser taking the Floor leaves a paused Spotify Track on screen")
+    func browserDoesNotClearSpotify() {
+        let spotify = FakeSpotify()
+        spotify.state = .paused(Self.song, position: 120)
+        let floor = NowPlayingFloorSource()
+        floor.receive(reading("com.google.Chrome", title: "a video"))
+
+        guard case .paused(let track, let position) = try! players(spotify, floor).currentState()
+        else {
+            Issue.record("expected Spotify's paused Track to survive")
+            return
+        }
+        #expect(track.name == "Sesame Syrup")
+        #expect(track.album == "Crush")
+        #expect(position == 120)
+    }
+
+    /// A browser coming and going changes nothing about what is shown.
+    @Test("the Floor moving between a browser and Spotify keeps showing Spotify")
+    func floorMovingKeepsSpotify() {
         let spotify = FakeSpotify()
         spotify.state = .playing(Self.song, position: 12)
         let floor = NowPlayingFloorSource()
         let players = players(spotify, floor)
 
         floor.receive(reading("com.google.Chrome", title: "a video"))
-        #expect(try! players.currentState().track?.name == "a video")
+        #expect(try! players.currentState().track?.name == "Sesame Syrup")
 
         floor.receive(reading("com.spotify.client", title: "Sesame Syrup"))
-        #expect(try! players.currentState().track?.uri.hasPrefix("spotify:track:") == true)
+        #expect(try! players.currentState().track?.name == "Sesame Syrup")
     }
 
     /// A paused Player still holds the Floor and is still worth showing — the
-    /// Overlay has always shown a paused Spotify Track, and a paused video is
-    /// no different.
-    @Test("a paused holder is still answered, not treated as nothing playing")
-    func pausedHolderIsStillAnswered() {
+    /// Overlay has always shown a paused Spotify Track.
+    @Test("a paused Spotify is still answered, not treated as nothing playing")
+    func pausedSpotifyIsStillAnswered() {
+        let spotify = FakeSpotify()
+        spotify.state = .paused(Self.song, position: 3)
         let floor = NowPlayingFloorSource()
-        floor.receive(reading("com.google.Chrome", title: "a video", playing: false))
+        floor.receive(reading("com.spotify.client", title: "Sesame Syrup"))
 
-        guard case .paused(let track, _) = try! players(FakeSpotify(), floor).currentState() else {
+        guard case .paused(let track, _) = try! players(spotify, floor).currentState() else {
             Issue.record("expected a paused Track")
             return
         }
-        #expect(track.name == "a video")
+        #expect(track.name == "Sesame Syrup")
     }
 
+    /// Something else genuinely owns playback, and showing Spotify's Track over
+    /// the top of it would be a wrong answer rather than a missing one.
     @Test("an application that is neither Spotify nor a browser is not shown")
     func unrecognisedHolder() {
         let spotify = FakeSpotify()
@@ -138,8 +157,9 @@ struct FloorArbitratedSourceTests {
     }
 
     /// The same protection when the adapter dies mid-session: the Floor is
-    /// emptied, and Spotify carries on being followed.
-    @Test("the Floor emptying mid-session hands back to Spotify rather than going blank")
+    /// emptied, and Spotify carries on being followed rather than the Overlay
+    /// going blank.
+    @Test("the adapter dying mid-session leaves Spotify on screen")
     func floorEmptyingHandsBackToSpotify() {
         let spotify = FakeSpotify()
         spotify.state = .playing(Self.song, position: 7)
@@ -147,7 +167,7 @@ struct FloorArbitratedSourceTests {
         let players = players(spotify, floor)
 
         floor.receive(reading("com.google.Chrome", title: "a video"))
-        #expect(try! players.currentState().track?.name == "a video")
+        #expect(try! players.currentState().track?.name == "Sesame Syrup")
 
         // What `NowPlayingFloorProcess` does when the adapter exits.
         floor.forget()
@@ -155,18 +175,14 @@ struct FloorArbitratedSourceTests {
     }
 
     /// A refused Automation permission must not become a crash or a broken
-    /// title, and must not stop the browser being followed next time.
-    @Test("a failing Spotify bridge is quiet, and the browser still works after")
+    /// title.
+    @Test("a failing Spotify bridge is quiet rather than fatal")
     func failingSpotifyIsQuiet() {
         let spotify = FakeSpotify()
         spotify.fails = true
         let floor = NowPlayingFloorSource()
-        let players = players(spotify, floor)
-
         floor.receive(reading("com.spotify.client", title: "Sesame Syrup"))
-        #expect(try! players.currentState() == .notRunning)
 
-        floor.receive(reading("com.google.Chrome", title: "a video"))
-        #expect(try! players.currentState().track?.name == "a video")
+        #expect(try! players(spotify, floor).currentState() == .notRunning)
     }
 }

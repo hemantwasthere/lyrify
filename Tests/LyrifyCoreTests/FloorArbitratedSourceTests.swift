@@ -156,6 +156,24 @@ struct FloorArbitratedSourceTests {
         #expect(state.position == 42)
     }
 
+    /// The same protection when the adapter dies mid-session: the Floor is
+    /// emptied, and Spotify carries on being followed rather than the Overlay
+    /// going blank.
+    @Test("the adapter dying mid-session leaves Spotify on screen")
+    func floorEmptyingHandsBackToSpotify() {
+        let spotify = FakeSpotify()
+        spotify.state = .playing(Self.song, position: 7)
+        let floor = NowPlayingFloorSource()
+        let players = players(spotify, floor)
+
+        floor.receive(reading("com.google.Chrome", title: "a video"))
+        #expect(try! players.currentState().track?.name == "Sesame Syrup")
+
+        // What `NowPlayingFloorProcess` does when the adapter exits.
+        floor.forget()
+        #expect(try! players.currentState().track?.name == "Sesame Syrup")
+    }
+
     /// A refused Automation permission must not become a crash or a broken
     /// title.
     @Test("a failing Spotify bridge is quiet rather than fatal")

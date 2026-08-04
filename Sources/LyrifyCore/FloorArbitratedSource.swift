@@ -56,7 +56,8 @@ public final class FloorArbitratedSource: PlaybackSource {
             // that reads it can fail to start or die at any time — it is a
             // workaround for a restriction Apple imposed once and could impose
             // again. Asking Spotify anyway is what keeps this dependency from
-            // ever being able to break Spotify support.
+            // ever being able to break Spotify support, which is a rule the
+            // browser path is not allowed to bend.
             return (try? spotify.currentState()) ?? .notRunning
 
         case .unrecognised:

@@ -36,12 +36,19 @@ final class CaptionsWindowController {
     private let window: NSPanel
     private let stack = NSStackView()
     private let statusLabel = NSTextField(labelWithString: "")
+    private let resizer = WindowResizer()
     private let positionPreference: CaptionsPositionPreference
+
+    /// Once the listener has sized the window themselves, it is theirs: it
+    /// stops growing on its own and keeps whatever they chose.
+    private var isSizedByListener: Bool
 
     init() {
         positionPreference = CaptionsPositionPreference()
+        let remembered = Self.onScreen(positionPreference.frame)
+        isSizedByListener = remembered != nil
 
-        let frame = Self.onScreen(positionPreference.frame) ?? Self.defaultFrame()
+        let frame = remembered ?? Self.defaultFrame()
         window = NSPanel(
             contentRect: frame,
             styleMask: [.borderless, .nonactivatingPanel, .resizable],
@@ -57,7 +64,7 @@ final class CaptionsWindowController {
         ]
         window.hidesOnDeactivate = false
         window.isMovableByWindowBackground = true
-        window.minSize = NSSize(width: 260, height: 120)
+        window.minSize = Self.minimumSize
 
         let background = CaptionsBackgroundView()
 
@@ -75,11 +82,24 @@ final class CaptionsWindowController {
         statusLabel.alignment = .center
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        // The same edge-and-corner resizing the Overlay has, from the same
+        // view — this window should feel like the other one.
+        resizer.minimumSize = Self.minimumSize
+        resizer.maximumSize = NSSize(width: 1400, height: 900)
+        resizer.onResized = { [weak self] in
+            guard let self else { return }
+            self.isSizedByListener = true
+            self.positionPreference.frame = self.window.frame
+        }
+
         background.addSubview(stack)
         background.addSubview(statusLabel)
+        background.addSubview(resizer)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -16),
+            stack.leadingAnchor.constraint(
+                equalTo: background.leadingAnchor, constant: Self.horizontalInset),
+            stack.trailingAnchor.constraint(
+                equalTo: background.trailingAnchor, constant: -Self.horizontalInset),
             stack.bottomAnchor.constraint(
                 equalTo: background.bottomAnchor, constant: -Self.verticalInset),
             stack.topAnchor.constraint(
@@ -88,6 +108,10 @@ final class CaptionsWindowController {
             statusLabel.centerYAnchor.constraint(equalTo: background.centerYAnchor),
             statusLabel.leadingAnchor.constraint(
                 greaterThanOrEqualTo: background.leadingAnchor, constant: 16),
+            resizer.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            resizer.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            resizer.topAnchor.constraint(equalTo: background.topAnchor),
+            resizer.bottomAnchor.constraint(equalTo: background.bottomAnchor),
         ])
 
         window.contentView = background
@@ -109,8 +133,12 @@ final class CaptionsWindowController {
         return visible ? frame : nil
     }
 
+    /// Small enough to start as a strip of one or two lines, and no smaller
+    /// than the resizer will allow.
+    static let minimumSize = NSSize(width: 300, height: 64)
+
     private static func defaultFrame() -> NSRect {
-        let size = NSSize(width: 460, height: 200)
+        let size = NSSize(width: 460, height: minimumSize.height)
         guard let screen = NSScreen.main else { return NSRect(origin: .zero, size: size) }
         return NSRect(
             x: screen.visibleFrame.midX - size.width / 2,
@@ -156,7 +184,7 @@ final class CaptionsWindowController {
         // mostly empty above the words, which reads as a layout mistake rather
         // than as breathing room — and a taller window should show more of what
         // was said, not more nothing.
-        for line in captions.lines.suffix(visibleLineCount) {
+        for line in captions.lines.suffix(Self.lineCap) {
             let label = NSTextField(wrappingLabelWithString: line.text)
             label.font = .systemFont(ofSize: 15, weight: line.isSettled ? .regular : .medium)
             // A line still being revised is dimmer than one the transcriber has
@@ -165,26 +193,47 @@ final class CaptionsWindowController {
             label.textColor = line.isSettled ? .labelColor : .secondaryLabelColor
             label.isSelectable = false
             label.drawsBackground = false
-            label.preferredMaxLayoutWidth = max(stack.bounds.width, 200)
+            label.preferredMaxLayoutWidth = max(
+                window.frame.width - Self.horizontalInset * 2, 200)
             stack.addArrangedSubview(label)
             label.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
+
+        growToFitContent()
     }
 
-    /// How many lines the window has room for.
+    /// Grows the window to hold what is on screen, and stops.
     ///
-    /// Estimated from its height rather than fixed, so growing the window fills
-    /// it with more of what was said. Deliberately generous about wrapping: a
-    /// long sentence takes two rows, so this errs toward slightly too few
-    /// rather than overflowing the top.
-    private var visibleLineCount: Int {
-        let available = (window.contentView?.bounds.height ?? 200) - Self.verticalInset * 2
-        return max(1, Int(available / Self.approximateLineHeight))
+    /// It starts as a strip and opens up as the first captions arrive, rather
+    /// than reserving a large empty card for words that have not been said yet.
+    /// Past the cap it stops growing and the oldest line drops off instead, so
+    /// a long talk does not slowly eat the screen.
+    ///
+    /// Does nothing once the listener has sized it themselves — at that point
+    /// the window is theirs.
+    private func growToFitContent() {
+        guard isSizedByListener == false else { return }
+
+        stack.layoutSubtreeIfNeeded()
+        let wanted = max(
+            Self.minimumSize.height,
+            stack.fittingSize.height + Self.verticalInset * 2)
+        guard abs(wanted - window.frame.height) > 1 else { return }
+
+        // Grows upward: the newest line stays where the eye already is.
+        var frame = window.frame
+        frame.origin.y -= wanted - frame.height
+        frame.size.height = wanted
+        window.setFrame(frame, display: true)
     }
 
-    /// One row of text plus the gap beneath it, near enough.
-    private static let approximateLineHeight: CGFloat = 27
+    /// The most captions kept on screen at once. Past this the oldest drops
+    /// off rather than the window growing without end — four is enough to
+    /// follow a thought without becoming a wall of text.
+    private static let lineCap = 4
+
     private static let verticalInset: CGFloat = 14
+    private static let horizontalInset: CGFloat = 16
 }
 
 /// Draws the card the captions sit on.

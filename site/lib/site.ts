@@ -9,11 +9,11 @@ export const site = {
    * because the card already shows it.
    */
   description:
-    "Lyrify is a menu-bar companion for Spotify on Mac that floats a small, time-synced lyrics overlay over whatever you're doing.",
+    "Lyrify is a menu-bar app for Mac that floats a small, time-synced lyrics overlay over whatever you're doing — and can caption anything your Mac is playing, on-device.",
   socialDescription:
-    "A menu-bar companion for Spotify on Mac that floats a small, time-synced lyrics overlay over whatever you're doing.",
-  ogImageAlt: "Lyrify — a time-synced Spotify lyrics overlay for macOS",
-  requirements: "macOS 14 Sonoma or later",
+    "A menu-bar app for Mac that floats a small, time-synced lyrics overlay over whatever you're doing — and can caption anything your Mac is playing, on-device.",
+  ogImageAlt: "Lyrify — time-synced lyrics and live captions for macOS",
+  requirements: "macOS 14 Sonoma or later — 26 or later for Live Captions",
   author: {
     name: "Hemant",
     handle: "@hemantwasthere",

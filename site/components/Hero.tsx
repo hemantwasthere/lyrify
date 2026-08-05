@@ -6,7 +6,7 @@ export function Hero() {
   return (
     <section className="grid grid-cols-[1.1fr_1fr] items-center gap-[clamp(32px,6vw,56px)] pt-[clamp(8px,2vw,24px)] pb-[clamp(48px,8vw,88px)] max-[760px]:grid-cols-1">
       <div>
-        <Eyebrow>Menu bar app for Spotify · macOS</Eyebrow>
+        <Eyebrow>Menu bar app · macOS</Eyebrow>
         <h1 className="mt-[14px] mb-5 text-[clamp(2.4rem,5vw,3.4rem)] leading-[1.08]">
           Lyrics that keep up
           <br />

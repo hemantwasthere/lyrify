@@ -1,8 +1,8 @@
 # Lyrify
 
-A menu bar companion for Spotify that follows along with what is playing and
-shows its synced lyrics. This is the shared language for talking about it —
-a glossary, not a spec.
+A menu bar app that follows along with what Spotify is playing and shows its
+synced lyrics, and that can caption whatever else the machine is playing. This
+is the shared language for talking about it — a glossary, not a spec.
 
 ## Language
 
@@ -94,6 +94,30 @@ Playback Position, the progress bar and everything reported about the Player
 stay as observed. Remembered against the Track, so a video corrected once
 stays corrected.
 _Avoid_: Delay, sync adjustment, calibration
+
+### Captions
+
+**Live Captions**:
+A persisted preference, off until switched on, that transcribes the machine's
+own audio and shows the words. Nothing is captured, transcribed or asked
+permission for until it is on. It governs the Captions window and nothing
+else — the Overlay is Spotify's whether it is on or off.
+_Avoid_: Subtitles, transcription mode
+
+**Caption**:
+One line of what was said, and whether the transcriber has settled on it. An
+unsettled Caption is still being revised and may yet change its words; a
+settled one will not. Drawn differently, so a reader can tell what is certain
+from what is still arriving.
+_Avoid_: Lyric Line — a Caption has no start time and no future, which is the
+whole reason it cannot live in the Lyrics view.
+
+**Captions window**:
+The separate window Live Captions draws into. Shows Captions and nothing else:
+no title, no channel, no application name, no artwork, no transport. Starts as
+a strip, grows as Captions arrive, and stops at four lines — after which the
+oldest scroll out of sight rather than the window growing without end.
+_Avoid_: Overlay — that is the Spotify one, and they are not the same window.
 
 ### The widget
 

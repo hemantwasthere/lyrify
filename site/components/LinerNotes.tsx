@@ -14,6 +14,10 @@ const NOTES = [
     body: "Shrink it down to a small now-playing card, or open it up to a full lyrics view — smooth the whole way, no flicker, no fixed size steps.",
   },
   {
+    title: "Captions anything your Mac plays",
+    body: "Turn on Live Captions and a separate window shows what you're listening to, as it's said — any app, any site. Transcribed on your Mac: no audio leaves it, and nothing is written to disk. Off until you ask for it.",
+  },
+  {
     title: "Feels like it belongs on your Mac",
     body: "Real window behavior — drag, resize cursor, native close button, hover-revealed controls. Not a hacky floating box bolted onto the screen.",
   },

@@ -9,6 +9,23 @@ import Foundation
 /// Deliberately knows nothing about subprocesses. Lines are handed to it by
 /// whoever runs the adapter, which is what lets the whole browser Player be
 /// driven in tests by feeding it text — no adapter built, launched or bundled.
+///
+/// **`currentState()` has no caller today, and that is on purpose.** Showing a
+/// video where the music goes put its title under an album cover belonging to a
+/// paused song, which made both look wrong, so `FloorArbitratedSource` answers
+/// Spotify for a browser instead. Everything below this line still runs and is
+/// still tested — the reading, the Track it builds, the artist and name
+/// `VideoTitle` reads out of a video's title — it simply is not drawn anywhere.
+///
+/// Restoring it is one line, in `FloorArbitratedSource.currentState()`:
+///
+/// ```swift
+/// case .browser:
+///     return (try? floor.currentState()) ?? .notRunning
+/// ```
+///
+/// `holder` and `holderProcess` are *not* dormant: Live Captions reads them to
+/// know which process to listen to.
 @MainActor
 public final class NowPlayingFloorSource: PlaybackSource {
     private var floor = NowPlayingFloor()

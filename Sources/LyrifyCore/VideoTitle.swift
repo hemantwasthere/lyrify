@@ -15,6 +15,10 @@ import Foundation
 /// "title first" would mean the provider iterating candidates, which is exactly
 /// the YouTube awareness this is here to keep out of it. The search step
 /// absorbs what a single reading gets slightly wrong.
+/// Nothing draws what this answers today — see `NowPlayingFloorSource` for why
+/// and for the one line that changes it. Kept live rather than commented out,
+/// so it goes on compiling and its tests go on running; commented-out code rots
+/// silently and is a lie by the time anyone wants it back.
 public enum VideoTitle {
     public struct Reading: Equatable, Sendable {
         public let artist: String
